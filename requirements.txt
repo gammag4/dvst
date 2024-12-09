@@ -1,0 +1,12 @@
+ipykernel
+pylint
+autopep8
+numpy
+scipy
+pandas
+matplotlib
+scikit-learn
+trimesh
+#opencv
+#open3d=0.18
+-r requirements-torch.txt

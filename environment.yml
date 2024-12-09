@@ -1,0 +1,26 @@
+name: compvis
+channels:
+  - conda-forge
+  - nvidia/label/12.4.1
+dependencies:
+  - python=3.12
+  - pip
+  - ipykernel
+  - pylint
+  - autopep8
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - cuda-toolkit=12.4.1
+  # - cuda-compiler=12.4.1
+  - cupy
+  - cudnn
+  - cutensor
+  # - nccl
+  - opencv
+  - trimesh
+  - pip:
+    - -r requirements-torch.txt
+    # - open3d=0.18 # If using, change python to 3.11
