@@ -1,12 +1,17 @@
 ipykernel
 pylint
 autopep8
+progressbar2
 numpy
 scipy
 pandas
 matplotlib
 scikit-learn
+scikit-image
 trimesh
-#opencv
-#open3d=0.18
+ultralytics
+imageio
+opencv
+open3d=0.18
+#chromadb
 -r requirements-torch.txt
