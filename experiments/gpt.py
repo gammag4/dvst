@@ -47,6 +47,9 @@ class GPT(pl.LightningModule):
         self.save_hyperparameters()
 
         # A list of the encoder or decoder blocks which constitute the Transformer.
+
+        # TODO configs register_feedforward() registers the type of config
+        # TODO List all ops from registry and document them (from xformers.ops.common import OPERATORS_REGISTRY)
         xformer_config = [
             {
                 # Turn on to test the effect of using reversible layers
