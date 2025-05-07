@@ -16,6 +16,10 @@ class PanopticDataset(Dataset):
             for i in d[1]:
                 i['filename'] = os.path.join(path, d[0], i['filename'])
 
+        # Coordinate convention transformation matrix
+        # Computed in experiments/ponoptic_coordinate_conventions.ipynb
+        self.Q = torch.tensor([[1.0, 0, 0], [0, -1, 0], [0, 0, -1]])
+
         self.data = data
 
     def __len__(self):
@@ -28,6 +32,7 @@ class PanopticDataset(Dataset):
             torch.tensor(v['K']),
             torch.tensor(v['R']),
             torch.tensor(v['t']),
+            torch.tensor(self.Q),
             v['fps'],
             torch.Size(v['shape'])
         ) for v in d]
