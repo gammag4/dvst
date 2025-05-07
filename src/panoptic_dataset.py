@@ -1,6 +1,7 @@
 import os
 import json
 
+import torch
 from torch.utils.data import Dataset
 from torchcodec.decoders import VideoDecoder
 
@@ -22,6 +23,12 @@ class PanopticDataset(Dataset):
 
     def __getitem__(self, i):
         d = self.data[i][1]
-        res = [(VideoDecoder(v['filename']), v['K'], v['R'],
-                v['t'], v['fps'], v['shape']) for v in d]
+        res = [(
+            VideoDecoder(v['filename']),
+            torch.tensor(v['K']),
+            torch.tensor(v['R']),
+            torch.tensor(v['t']),
+            v['fps'],
+            torch.Size(v['shape'])
+        ) for v in d]
         return res
