@@ -32,7 +32,7 @@ class PanopticDataset(Dataset):
             torch.tensor(v['K']),
             torch.tensor(v['R']),
             torch.tensor(v['t']),
-            torch.tensor(self.Q),
+            self.Q,
             v['fps'],
             torch.Size(v['shape'])
         ) for v in d]
