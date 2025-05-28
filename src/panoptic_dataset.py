@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Dataset
 from torchcodec.decoders import VideoDecoder
 
-
+#TODO create test dataset
 class PanopticDataset(Dataset):
     def __init__(self, path):
         self.path = path
@@ -16,10 +16,6 @@ class PanopticDataset(Dataset):
             for i in d[1]:
                 i['filename'] = os.path.join(path, d[0], i['filename'])
 
-        # Coordinate convention transformation matrix
-        # Computed in experiments/ponoptic_coordinate_conventions.ipynb
-        self.Q = torch.tensor([[1.0, 0, 0], [0, -1, 0], [0, 0, -1]])
-
         self.data = data
 
     def __len__(self):
@@ -27,13 +23,14 @@ class PanopticDataset(Dataset):
 
     def __getitem__(self, i):
         d = self.data[i][1]
-        res = [(
-            VideoDecoder(v['filename']),
-            torch.tensor(v['K']),
-            torch.tensor(v['R']),
-            torch.tensor(v['t']),
-            self.Q,
-            v['fps'],
-            torch.Size(v['shape'])
-        ) for v in d]
+        res = [{
+            'video': VideoDecoder(v['filename']),
+            'K': torch.tensor(v['K']),
+            'R': torch.tensor(v['R']),
+            't': torch.tensor(v['t']),
+            'fps': v['fps']
+        } for v in d]
+        for v in res:
+            vid = v['video']
+            v['shape'] = [len(vid), *vid[0].shape]
         return res
