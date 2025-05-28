@@ -102,8 +102,6 @@ class PanopticDownloader:
                 os.makedirs(p, exist_ok=True)
                 p = os.path.join(p, v['filename'])
                 urlretrieve(v['url'], p)
-                vid = VideoDecoder(p, device=self.device)
-                scenes[i][1][j]['shape'] = [len(vid), *vid[0].shape]
 
         os.makedirs(path, exist_ok=True)
         with open(os.path.join(path, 'data.json'), 'w', encoding='utf-8') as f:
