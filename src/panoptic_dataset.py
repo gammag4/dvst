@@ -5,6 +5,8 @@ import torch
 from torch.utils.data import Dataset
 from torchcodec.decoders import VideoDecoder
 
+from .utils import preprocess_scene_video
+
 #TODO create test dataset
 class PanopticDataset(Dataset):
     def __init__(self, path):
@@ -23,14 +25,13 @@ class PanopticDataset(Dataset):
 
     def __getitem__(self, i):
         d = self.data[i][1]
-        res = [{
-            'video': VideoDecoder(v['filename']),
-            'K': torch.tensor(v['K']),
-            'R': torch.tensor(v['R']),
-            't': torch.tensor(v['t']),
-            'fps': v['fps']
-        } for v in d]
-        for v in res:
-            vid = v['video']
-            v['shape'] = [len(vid), *vid[0].shape]
-        return res
+
+        return [
+            preprocess_scene_video(
+                v['filename'],
+                v['K'],
+                v['R'],
+                v['t'],
+                v['fps']
+            ) for v in d
+        ]

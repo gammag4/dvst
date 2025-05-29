@@ -6,6 +6,8 @@ import torch
 from torch.utils.data import Dataset
 from torchcodec.decoders import VideoDecoder
 
+from .utils import preprocess_scene_video
+
 
 # Download dataset from https://github.com/facebookresearch/Neural_3D_Video/releases
 # unzip all in a folder and use it as root for the dataset
@@ -52,14 +54,13 @@ class PlenopticDataset(Dataset):
 
     def __getitem__(self, i):
         d = self.data[i]
-        res = [{
-            'video': VideoDecoder(v[0]),
-            'K': v[1],
-            'R': v[2],
-            't': v[3],
-            'fps': self.fps
-        } for v in d]
-        for v in res:
-            vid = v['video']
-            v['shape'] = [len(vid), *vid[0].shape]
-        return res
+
+        return [
+            preprocess_scene_video(
+                v[0],
+                v[1],
+                v[2],
+                v[3],
+                self.fps
+            ) for v in d
+        ]
