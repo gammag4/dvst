@@ -28,7 +28,7 @@ def colmap_poses_to_intrinsics_extrinsics(data):
 class PlenopticDataset(Dataset):
     def __init__(self, path, is_test=False):
         self.path = path
-        self.fps = 60
+        self.fps = 30
         self.is_test = is_test
         scene_names = list(filter(lambda p: os.path.isdir(os.path.join(path, p)), os.listdir(path)))
         self.data = [self.load_data(n) for n in scene_names]
