@@ -6,7 +6,7 @@ from torchcodec.decoders import VideoDecoder
 
 
 def preprocess_scene_video(video_path, K, R, t, fps):
-    K, R, t = [torch.tensor(i) if isinstance(i, torch.Tensor) else i for i in (K, R, t)]
+    K, R, t = [i if isinstance(i, torch.Tensor) else torch.tensor(i) for i in (K, R, t)]
     video = VideoDecoder(video_path)
     return {
         'video': video,
