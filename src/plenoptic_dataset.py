@@ -6,23 +6,11 @@ import torch
 from torch.utils.data import Dataset
 from torchcodec.decoders import VideoDecoder
 
-from .utils import preprocess_scene_video
+from .utils import preprocess_scene_video, colmap_poses_to_intrinsics_extrinsics
 
 
 # Download dataset from https://github.com/facebookresearch/Neural_3D_Video/releases
 # unzip all in a folder and use it as root for the dataset
-
-
-def colmap_poses_to_intrinsics_extrinsics(data):
-    mat, close, far = data[:, :-2].reshape((-1, 3, 5)), data[:, -2], data[:, -1]
-    T, mat2 = mat[:, :, :-1], mat[:, :, -1:]
-    h, w, f = mat2[:, 0, 0], mat2[:, 1, 0], mat2[:, 2, 0]
-
-    # Since we only have width, height and focal point, the intrinsics matrix will give imprecise results
-    K = torch.zeros((T.shape[0], 3, 3))
-    K[:, 0, 0], K[:, 1, 1], K[:, 2, 2], K[:, 0, 2], K[:, 1, 2] = f, f, 1, w / 2, h / 2
-
-    return K, T, (h, w)
 
 
 class PlenopticDataset(Dataset):
