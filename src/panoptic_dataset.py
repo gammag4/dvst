@@ -9,29 +9,42 @@ from .utils import preprocess_scene_video
 
 #TODO create test dataset
 class PanopticDataset(Dataset):
-    def __init__(self, path):
+    # if is_processed, uses videos with name hd_**_**_r.mp4 instead of hd_**_**.mp4
+    def __init__(self, path, is_processed=True):
         self.path = path
-        with open(os.path.join(path, 'data.json')) as f:
-            data = json.load(f)
+        self.is_processed = is_processed
+        self.fps = {'hd': 29.97, 'vga': 25.0, 'kinect-color': 30}
 
-        for d in data:
-            for i in d[1]:
-                i['filename'] = os.path.join(path, d[0], i['filename'])
+        scenes = []
+        for sname in os.listdir(path):
+            spath = os.path.join(path, sname)
+            cal_path = os.path.join(spath, f'calibration_{sname}.json')
+            vids_path = os.path.join(spath, 'hdVideos')
+            vid_names = list(map(lambda vid: '_'.join(vid.split('_')[1:3]), os.listdir(vids_path)))
+            
+            with open(cal_path) as f:
+                cameras = json.load(f)['cameras']
+            
+            cameras = {c['name']: c for c in cameras}
+            cameras = [cameras[c] for c in vid_names]
+            cameras = [[
+                os.path.join(vids_path, self.get_video_name(c['name'])),
+                c['K'],
+                c['R'],
+                c['t'],
+                self.fps[c['type']]
+                ] for c in cameras]
+        
+            scenes.append(cameras)
 
-        self.data = data
+        self.data = scenes
+            
+    def get_video_name(self, vid_id):
+        return f'hd_{vid_id}_r.mp4' if self.is_processed else f'hd_{vid_id}.mp4'
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, i):
-        d = self.data[i][1]
-
-        return [
-            preprocess_scene_video(
-                v['filename'],
-                v['K'],
-                v['R'],
-                v['t'],
-                v['fps']
-            ) for v in d
-        ]
+        d = self.data[i]
+        return [preprocess_scene_video(*v) for v in d]
