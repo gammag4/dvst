@@ -19,11 +19,15 @@ def preprocess_scene_video(video_path, K, R, t, fps):
     # K, R and t may be either just one matrix for the entire thing (static cameras) or a batch of matrices, one for each frame (moving cameras)
     K, R, t = [i if isinstance(i, torch.Tensor) else torch.tensor(i) for i in (K, R, t)]
     video = VideoDecoder(video_path)
+    
+    # Frame times
+    time = torch.arange(shape[-4]) / fps
+    
     return {
         'video': video,
         'K': K,
         'R': R.squeeze().reshape((-1, 3, 3)),
         't': t.squeeze().reshape((-1, 3)),
-        'fps': fps,
+        'time': time,
         'shape': [len(video), *video[0].shape]
     }
