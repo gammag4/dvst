@@ -29,6 +29,7 @@ def preprocess_scene_video(video_path, K, R, t, fps):
     return {
         'video': video,
         'K': K,
+        'Kinv': K.inverse(),
         'R': R.squeeze().reshape((-1, 3, 3)),
         't': t.squeeze().reshape((-1, 3)),
         'time': time,
