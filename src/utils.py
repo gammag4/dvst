@@ -22,8 +22,8 @@ def preprocess_scene_video(video_path, K, R, t, fps):
     return {
         'video': video,
         'K': K,
-        'R': R,
-        't': t,
+        'R': R.squeeze().reshape((-1, 3, 3)),
+        't': t.squeeze().reshape((-1, 3)),
         'fps': fps,
         'shape': [len(video), *video[0].shape]
     }
