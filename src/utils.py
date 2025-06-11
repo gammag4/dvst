@@ -22,6 +22,12 @@ def preprocess_scene_video(video_path, K, R, t, fps):
     K, R, t = [i if isinstance(i, torch.Tensor) else torch.tensor(i) for i in (K, R, t)]
     video = VideoDecoder(video_path)
     shape = [len(video), *video[0].shape]
+
+    # Takes into account resized images
+    h_real, w_real = shape[-2:]
+    h, w = 2 * K[1, 2], 2 * K[0, 2]
+    K[1, 2], K[0, 2] = h_real / 2, w_real / 2 # p_y, p_x
+    K[0, 0], K[1, 1] = K[0, 0] * (w_real / w), K[1, 1] * (h_real / h) # c_x, c_y
     
     # Frame times
     time = torch.arange(shape[-4]) / fps
