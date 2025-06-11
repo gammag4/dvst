@@ -17,6 +17,8 @@ def colmap_poses_to_intrinsics_extrinsics(data):
 def preprocess_scene_video(video_path, K, R, t, fps):
     # Preprocesses data for a scene video and returns the result. Should be used in dataset.__getitem__()
     # R and t may be either just one matrix for the entire thing (static cameras) or a batch of matrices, one for each frame (moving cameras)
+    # TODO do matrix computations from here precached and store in database, especially the ones for moving cameras, which have per-frame matrices
+    # TODO add an UV option too (to convert to uv) (also actually add it precached too)
     K, R, t = [i if isinstance(i, torch.Tensor) else torch.tensor(i) for i in (K, R, t)]
     video = VideoDecoder(video_path)
     shape = [len(video), *video[0].shape]
