@@ -10,6 +10,8 @@ scikit-learn
 scikit-image
 trimesh
 ultralytics
+omegaconf
+easydict
 imageio
 opencv
 open3d=0.18

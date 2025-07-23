@@ -63,13 +63,13 @@ def compute_octaves(v, n_oct, dim=-1):
 
 
 class PoseEncoder(nn.Module):
-    def __init__(self, dvst_config):
+    def __init__(self, config):
         super().__init__()
-        self.dvst_config = dvst_config
-        self.d_lat = self.dvst_config.d_lat
-        self.n_oct = self.dvst_config.n_oct
-        self.C = self.dvst_config.C
-        self.p = self.dvst_config.p
+        self.config = config
+        self.d_lat = self.config.model.d_lat
+        self.n_oct = self.config.model.n_oct
+        self.C = self.config.model.C
+        self.p = self.config.model.p
 
         # TODO test two cases, one with parameter (this) and another with two different linear layers one for sources (w/ images) and another for target (w/o images)
         # TODO initialize w gaussian

@@ -4,13 +4,13 @@ import einx
 
 
 class DVSTDecoder(nn.Module):
-    def __init__(self, dvst_config, pose_encoder):
+    def __init__(self, config, pose_encoder):
         super().__init__()
         
-        self.dvst_config = dvst_config
-        self.C = self.dvst_config.C
-        self.p = self.dvst_config.p
-        self.d_lat = self.dvst_config.d_lat
+        self.config = config
+        self.C = self.config.model.C
+        self.p = self.config.model.p
+        self.d_lat = self.config.model.d_lat
         
         self.pose_encoder = pose_encoder
         self.transformer = lambda x: x #TODO

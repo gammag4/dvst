@@ -4,16 +4,16 @@ import torch.nn as nn
 
 class DVSTEncoder(nn.Module):
     # latent_aggregator(next_frame_embeds, current_latent_embeds) creates next latent embeds from current embeds and next frame
-    def __init__(self, dvst_config, pose_encoder):
+    def __init__(self, config, pose_encoder):
         super().__init__()
         
-        self.dvst_config = dvst_config
-        self.n_lat = self.dvst_config.n_lat
-        self.d_lat = self.dvst_config.d_lat
+        self.config = config
+        self.n_lat = self.config.model.n_lat
+        self.d_lat = self.config.model.d_lat
         
         self.start_latent_embeds = nn.Parameter(torch.zeros((self.n_lat, self.d_lat)))
         self.pose_encoder = pose_encoder
-        self.latent_aggregator = self.dvst_config.latent_aggregator
+        self.latent_aggregator = self.config.model.latent_aggregator
         self.transformer = lambda x: x #TODO
         
     def forward(self, scene):
