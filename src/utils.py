@@ -2,6 +2,12 @@ import torch
 from torchcodec.decoders import VideoDecoder
 
 
+def create_bound_function(self, func):
+    # Binds an external function to a class instance as if it was defined in the class
+    def new_func(*args, **kwargs): return func(self, *args, **kwargs)
+    return new_func
+
+
 def colmap_poses_to_intrinsics_extrinsics(data):
     mat, close, far = data[:, :-2].reshape((-1, 3, 5)), data[:, -2], data[:, -1]
     T, mat2 = mat[:, :, :-1], mat[:, :, -1:]
