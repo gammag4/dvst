@@ -66,7 +66,7 @@ class PoseEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.d_lat = self.config.model.d_lat
+        self.d_model = self.config.model.d_model
         self.n_oct = self.config.model.n_oct
         self.C = self.config.model.C
         self.p = self.config.model.p
@@ -80,7 +80,7 @@ class PoseEncoder(nn.Module):
         self.linear = nn.Linear(
             in_features=(12 * self.n_oct + self.C) * self.p ** 2 + 2 * self.n_oct,
             #in_features=(6 + self.C) * self.p ** 2 + 1, # Without octaves, just for testing
-            out_features=self.d_lat,
+            out_features=self.d_model,
             dtype=torch.float64
         )
         

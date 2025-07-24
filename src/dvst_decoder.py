@@ -10,12 +10,12 @@ class DVSTDecoder(nn.Module):
         self.config = config
         self.C = self.config.model.C
         self.p = self.config.model.p
-        self.d_lat = self.config.model.d_lat
+        self.d_model = self.config.model.d_model
         
         self.pose_encoder = pose_encoder
         self.transformer = lambda x: x #TODO
         self.embeds_to_patch_embeds = nn.Sequential([
-            nn.Linear(in_features=self.d_lat, out_features=self.C * self.p ** 2),
+            nn.Linear(in_features=self.d_model, out_features=self.C * self.p ** 2),
             nn.Sigmoid()
         ])
 

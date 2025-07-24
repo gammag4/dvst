@@ -9,7 +9,7 @@ def process_config(config):
 
 
 def validate_config(config):
-    assert config.model.d_lat % config.model.n_heads == 0, "n_heads should divide d_lat"
+    assert config.model.d_model % config.model.n_heads == 0, "n_heads should divide d_model"
 
 
 def load_config(path):

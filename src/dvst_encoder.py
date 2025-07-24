@@ -9,9 +9,9 @@ class DVSTEncoder(nn.Module):
         
         self.config = config
         self.n_lat = self.config.model.n_lat
-        self.d_lat = self.config.model.d_lat
+        self.d_model = self.config.model.d_model
         
-        self.start_latent_embeds = nn.Parameter(torch.zeros((self.n_lat, self.d_lat)))
+        self.start_latent_embeds = nn.Parameter(torch.zeros((self.n_lat, self.d_model)))
         self.pose_encoder = pose_encoder
         self.latent_aggregator = self.config.model.latent_aggregator
         self.transformer = lambda x: x #TODO
