@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import einx
 
+from src.transformer import Encoder
+
 
 class DVSTDecoder(nn.Module):
     def __init__(self, config, pose_encoder):
@@ -13,7 +15,17 @@ class DVSTDecoder(nn.Module):
         self.d_model = self.config.model.d_model
         
         self.pose_encoder = pose_encoder
-        self.transformer = lambda x: x #TODO
+        
+        self.transformer = Encoder(
+            self.config.model.N_dec,
+            self.config.model.d_model,
+            self.config.model.n_heads,
+            self.config.model.e_ff,
+            nn.GELU,
+            None,
+            self.config.train.dropout
+        )
+
         self.embeds_to_patch_embeds = nn.Sequential([
             nn.Linear(in_features=self.d_model, out_features=self.C * self.p ** 2),
             nn.Sigmoid()

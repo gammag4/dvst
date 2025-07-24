@@ -19,7 +19,7 @@ model:
   # Number of color channels in each frame
   C: 3
   # The function that will be used to aggregate latents across frames. Should be one of the functions from src.latent_aggregators
-  latent_aggregator: 'regular_latent_aggregator'
+  latent_aggregator: 'residual_latent_aggregator'
   # frames_per_scene is the size of the batches that the videos will be broken into to create scenes
   #   TODO this was from the old idea of breaking scene into smaller batches of 3
   #   TODO test 3 ideas separate:
@@ -27,3 +27,8 @@ model:
   #     just breaking into blocks of 3
   #     and test both together (breaking into blocks of size k and doing incremental creation of latents)
   # frames_per_scene: 3
+
+train:
+  # Dropout rate
+  # TODO test separate dropouts for each layer
+  dropout: 0.1

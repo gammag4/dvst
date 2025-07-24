@@ -3,6 +3,8 @@ import torch.nn as nn
 
 from src.utils import create_bound_function
 
+from src.transformer import Encoder
+
 
 class DVSTEncoder(nn.Module):
     # latent_aggregator(next_frame_embeds, current_latent_embeds) creates next latent embeds from current embeds and next frame
@@ -16,6 +18,16 @@ class DVSTEncoder(nn.Module):
         self.start_latent_embeds = nn.Parameter(torch.zeros((self.n_lat, self.d_model)))
         self.pose_encoder = pose_encoder
         self.latent_aggregator = create_bound_function(self, self.config.model.latent_aggregator)
+        
+        self.transformer = Encoder(
+            self.config.model.N_enc,
+            self.config.model.d_model,
+            self.config.model.n_heads,
+            self.config.model.e_ff,
+            nn.GELU,
+            None,
+            self.config.train.dropout
+        )
         
     def forward(self, scene):
         #TODO ADD RESIDUAL BLOCKS IN BETWEEN
