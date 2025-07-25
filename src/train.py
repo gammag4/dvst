@@ -1,5 +1,7 @@
 import os
+import random
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -104,6 +106,22 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
     )
 
 
+def enable_reproducibility(seed, rank):
+    # https://docs.pytorch.org/docs/stable/notes/randomness.html
+    # https://discuss.pytorch.org/t/difference-between-torch-manual-seed-and-torch-cuda-manual-seed/13848
+
+    seed = seed + rank
+    os.environ['PYTHONHASHSEED']=str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    # Impacts performance
+    #torch.use_deterministic_algorithms(True)
+
+    # TODO check https://docs.pytorch.org/docs/stable/notes/randomness.html#dataloader
+
+
 def init_ddp(local_world_size, local_rank):
     # No need for this since torchrun already specifies master addr and port
     #os.environ['MASTER_ADDR'] = 'localhost'
@@ -127,6 +145,10 @@ def main(save_every: int, total_epochs: int, batch_size: int, snapshot_path: str
     local_world_size = int(os.environ['LOCAL_WORLD_SIZE'])
     rank = int(os.environ['RANK'])
     local_rank = int(os.environ['LOCAL_RANK'])
+    
+    # Enables reproducibility across runs
+    enable_reproducibility(42, rank)
+
     init_ddp(local_world_size, local_rank)
 
     dataset, model, optimizer = load_train_objs()
