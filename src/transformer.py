@@ -117,3 +117,10 @@ class Encoder(nn.Module):
 
     def forward(self, X):
         return self.blocks(X)
+
+
+# TODO check new torch flash attention and compare with xformers:
+# https://docs.pytorch.org/docs/stable/backends.html#module-torch.backends.mha
+# torch.functional.scaled_dot_product_attention
+# torch.nn.MultiheadAttention
+# torch.nn.TransformerEncoderLayer
