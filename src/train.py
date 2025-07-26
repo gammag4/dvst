@@ -129,6 +129,11 @@ def init_ddp(local_world_size, local_rank, config):
     #os.environ['MASTER_ADDR'] = 'localhost'
     #os.environ['MASTER_PORT'] = '12355'
 
+    # Set num threads per process for OpenMP (used by DDP, see https://github.com/pytorch/pytorch/blob/65e6194aeb3269a182cfe2c05c122159da12770f/torch/distributed/run.py#L597-L608)
+    # Should be set to num_cpu_threads / num_processes_per_node, that way you have that many threads for each process in the node
+    num_cpus = os.cpu_count()
+    os.environ['OMP_NUM_THREADS'] = num_cpus // local_world_size + (1 if local_rank > num_cpus % local_world_size else 0)
+
     # Best practice when using DDP with torchrun, since the GPU used for this process will always be the one specified by local_rank
     # This prevents hangs or excessive memory usage on GPU:0
     torch.cuda.set_device(local_rank)
@@ -147,6 +152,19 @@ def main(config):
     local_world_size = int(os.environ['LOCAL_WORLD_SIZE'])
     rank = int(os.environ['RANK'])
     local_rank = int(os.environ['LOCAL_RANK'])
+    
+    # Allows tf32 optimization (lower float32 precision with higher speed)
+    # This also sets torch.backends.cuda.matmul.allow_tf32, see note in https://docs.pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html
+    torch.set_float32_matmul_precision(config.setup.tf32_level)
+    torch.backends.cudnn.allow_tf32 = config.setup.tf32_level != 'highest'
+    
+    # Enable cuDNN auto-tuner
+    # Runs a short benchmark, chooses the best kernel on the first step and uses it in the next steps
+    # then the first step is slower but all other steps are faster
+    # the problem is that when you have a model that keeps changing at each nth iteration or where that input size changes, it becomes slower since it benchmarks again at every change
+    # a rule of thumb would be to run for some time with and without it and check which is faster in the later steps (without considering the first one)
+    # This affects reproducibility
+    torch.backends.cudnn.benchmark = config.setup.benchmark_kernels
     
     # Enables reproducibility across runs
     enable_reproducibility(config.setup.seed, rank)
@@ -181,6 +199,10 @@ if __name__ == '__main__':
 
     # torchrun already handles setting up env variables and launching processes on the appropriate nodes, so we just call main
     main(config)
+
+    # TODO On using numactl with torchrun:
+    # https://github.com/pytorch/pytorch/issues/115305#issuecomment-1845957682
+    # https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/performance_tuning/tuning_guide.html#numactl
 
     # Running single node:
     # torchrun --standalone --nproc-per-node=gpu script.py 50 10
