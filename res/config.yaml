@@ -1,3 +1,10 @@
+setup:
+  # Seed for computations
+  seed: 42
+  ddp:
+    # Timeout for ddp process group
+    timeout: 1800
+
 model:
   # Number of layers in transformer encoder
   N_enc: 2
@@ -32,3 +39,7 @@ train:
   # Dropout rate
   # TODO test separate dropouts for each layer
   dropout: 0.1
+  batch_size: 32
+  total_epochs: 50
+  save_every: 10
+  snapshot_path: 'snapshot.pt'

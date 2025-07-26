@@ -1,16 +1,19 @@
 import os
 import random
+import datetime
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from datautils import MyTrainDataset
 
 import torch.multiprocessing as mp # Wrapper around python's native multiprocessing
 from torch.utils.data.distributed import DistributedSampler # Model that takes in data and distributes across GPUs
 from torch.nn.parallel import DistributedDataParallel as DDP # DDP wrapper
 import torch.distributed as dist
+
+from src.config import load_config
+from datautils import MyTrainDataset
 
 
 class Trainer:
@@ -19,22 +22,21 @@ class Trainer:
         model: torch.nn.Module,
         train_data: DataLoader,
         optimizer: torch.optim.Optimizer,
-        save_every: int,
-        snapshot_path: str,
         local_rank: int,
-        rank: int
+        rank: int,
+        config
     ) -> None:
         self.local_rank = local_rank
         self.rank = rank
         self.model = model.to(self.local_rank)
         self.train_data = train_data
         self.optimizer = optimizer
-        self.save_every = save_every
+        self.save_every = config.save_every
 
         # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing snapshot
         # Starts from snapshot if exists
         self.epochs_run = 0
-        self.snapshot_path = snapshot_path
+        self.snapshot_path = config.snapshot_path
         if os.path.exists(self.snapshot_path):
             print('Loading snapshot')
             self._load_snapshot()
@@ -122,7 +124,7 @@ def enable_reproducibility(seed, rank):
     # TODO check https://docs.pytorch.org/docs/stable/notes/randomness.html#dataloader
 
 
-def init_ddp(local_world_size, local_rank):
+def init_ddp(local_world_size, local_rank, config):
     # No need for this since torchrun already specifies master addr and port
     #os.environ['MASTER_ADDR'] = 'localhost'
     #os.environ['MASTER_PORT'] = '12355'
@@ -136,10 +138,10 @@ def init_ddp(local_world_size, local_rank):
     # When using torchrun, we don't need to specify rank and world size since it already handles this for us
     # There are two ways to initialize process group: TCP and shared file-system. See both here: https://docs.pytorch.org/docs/stable/distributed.html#tcp-initialization
     # See backends here: https://docs.pytorch.org/docs/stable/distributed.html#backends
-    dist.init_process_group(backend='nccl') #, rank=rank, world_size=world_size)
+    dist.init_process_group(backend='nccl', timeout=datetime.timedelta(seconds=config.timeout)) #, rank=rank, world_size=world_size)
 
 
-def main(save_every: int, total_epochs: int, batch_size: int, snapshot_path: str):
+def main(config):
     # Torchrun already sets local and global ranks as environment variables
     world_size = int(os.environ['WORLD_SIZE'])
     local_world_size = int(os.environ['LOCAL_WORLD_SIZE'])
@@ -147,16 +149,16 @@ def main(save_every: int, total_epochs: int, batch_size: int, snapshot_path: str
     local_rank = int(os.environ['LOCAL_RANK'])
     
     # Enables reproducibility across runs
-    enable_reproducibility(42, rank)
+    enable_reproducibility(config.setup.seed, rank)
 
-    init_ddp(local_world_size, local_rank)
+    init_ddp(local_world_size, local_rank, config.setup.ddp)
 
     dataset, model, optimizer = load_train_objs()
-    train_data = prepare_dataloader(dataset, batch_size)
+    train_data = prepare_dataloader(dataset, config.train.batch_size)
     # We can also do a distributed evaluation by also using distributed sampler in the evaluation data
-    # test_data = prepare_dataloader(test_dataset, batch_size)
-    trainer = Trainer(model, train_data, optimizer, save_every, snapshot_path, local_rank, rank)
-    trainer.train(total_epochs)
+    # test_data = prepare_dataloader(test_dataset, config.train.batch_size)
+    trainer = Trainer(model, train_data, optimizer, local_rank, rank, config.train)
+    trainer.train(config.train.total_epochs)
 
     # Destroys process group
     dist.destroy_process_group()
@@ -165,20 +167,20 @@ def main(save_every: int, total_epochs: int, batch_size: int, snapshot_path: str
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='simple distributed training job')
-    parser.add_argument('total_epochs', type=int, help='Total epochs to train the model')
-    parser.add_argument('save_every', type=int, help='How often to save a snapshot')
-    parser.add_argument('--batch_size', default=32, type=int, help='Input batch size on each device (default: 32)')
+    parser.add_argument('--config_file', type=str, help='Path to config file')
     args = parser.parse_args()
 
+    config = load_config(args.config_file)
+
     # No need for this when using torchrun
-    # # no "rank" arg since mp.spawn already passes "rank" down
+    # # no "rank" arg since mp.spawn already passes "rank" down as first argument
     # # we set nprocs=world_size to create as many processes as the number of GPUs (1 process per GPU)
     # #world_size = torch.cuda.device_count()
     # More details here: https://docs.pytorch.org/docs/stable/distributed.html#spawn-utility
-    # #mp.spawn(main, args=(world_size, args.save_every, args.total_epochs, args.batch_size), nprocs=world_size)
+    # #mp.spawn(main, args=(config), nprocs=world_size)
 
     # torchrun already handles setting up env variables and launching processes on the appropriate nodes, so we just call main
-    main(args.save_every, args.total_epochs, args.batch_size, 'snapshot.pt')
+    main(config)
 
     # Running single node:
     # torchrun --standalone --nproc-per-node=gpu script.py 50 10
