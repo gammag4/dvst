@@ -24,14 +24,11 @@ def compute_view_rays(vecs, Kinv, R, t):
     # vecs: meshgrid vecs, first dim is (x, y, z)
     # vecs: (3, h, w), Kinv: (3, 3), R: (B, 3, 3), t: (B, 3)
 
-    # TODO check without double precision
-    vecs, Kinv, R, t = [i.to(torch.float64) for i in (vecs, Kinv, R, t)]
-
     h, w = vecs.shape[-2:]
 
     o = -einx.dot('... h w, ... h -> ... w', R, t)  # -R^T t
     o = einx.rearrange('... c -> ... c h w', o, h=h, w=w) # repeat o for each vec # TODO repeating maybe not needed
-    d = einx.dot('... x1 c2, x1 c, c h w -> ... c2 h w', R.to(torch.float64), Kinv.to(torch.float64), vecs) # R^T K^-1 x_ij,cam # TODO check without double precision
+    d = einx.dot('... x1 c2, x1 c, c h w -> ... c2 h w', R, Kinv, vecs) # R^T K^-1 x_ij,cam
     d = d / einx.sum('b [c] h w -> b 3 h w', d * d).sqrt() # normalize d
 
     # o, d: (B, 3, H, W)
@@ -76,12 +73,10 @@ class PoseEncoder(nn.Module):
         # (C, p, p)
         self.im_parameter = nn.Parameter(torch.zeros((self.C, self.p, self.p)))
 
-        # TODO check without double precision
         self.linear = nn.Linear(
             in_features=(12 * self.n_oct + self.C) * self.p ** 2 + 2 * self.n_oct,
             #in_features=(6 + self.C) * self.p ** 2 + 1, # Without octaves, just for testing
-            out_features=self.d_model,
-            dtype=torch.float64
+            out_features=self.d_model
         )
         
     def _compute_view_rays(self, Kinv, R, t, pad, hw):
@@ -91,7 +86,7 @@ class PoseEncoder(nn.Module):
 
         # Creates vectors for each pixel in screen
         # No need to unflip y axis since it being flipped does not affect the topological structure of the representation TODO is it true?
-        ranges = [torch.arange(l, dtype=torch.float64) - o + 0.5 for o, l in zip(pad_s, hw)]
+        ranges = [torch.arange(l, dtype=torch.float32) - o + 0.5 for o, l in zip(pad_s, hw)]
         # In the original LVSM impl, the K^{-1} multiplication is done here bc its faster, maybe change the code to do that too (https://github.com/Haian-Jin/LVSM/blob/ebeff4989a3e1ec38fcd51ae24919d0eadf38c8f/utils/data_utils.py#L71-L73)
         # Used torch.ones since it seems to be used by most of the vision models similar to this (e.g. lvsm, see https://github.com/Haian-Jin/LVSM/blob/ebeff4989a3e1ec38fcd51ae24919d0eadf38c8f/utils/data_utils.py#L73)
         # The torch.ones is used bc the convention is that the theoretical sensor plane has focal length 1 (it maps to coordinates (u, v, 1), which would be equivalent to (f u, f v, f) = f(u, v, 1))
