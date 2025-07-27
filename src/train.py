@@ -11,6 +11,7 @@ import torch.multiprocessing as mp # Wrapper around python's native multiprocess
 from torch.utils.data.distributed import DistributedSampler # Model that takes in data and distributes across GPUs
 from torch.nn.parallel import DistributedDataParallel as DDP # DDP wrapper
 import torch.distributed as dist
+import torch.amp as amp
 
 from src.config import load_config
 from datautils import MyTrainDataset
@@ -30,6 +31,9 @@ class Trainer:
         self.train_data = train_data
         self.optimizer = optimizer
         self.save_every = config.train.save_every
+        self.device = config.device
+        self.amp_enabled = config.setup.amp.enabled
+        self.amp_dtype = config.setup.amp.dtype
 
         # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing snapshot
         # Starts from snapshot if exists
@@ -43,6 +47,10 @@ class Trainer:
         # This also works for multi-GPU models, but in that case, device_ids and output_device must NOT be set,
         # these should be sent to the proper devices by either the application or by model.forward()
         self.model = DDP(self.model, device_ids=[self.local_rank])
+        
+        # Gradient scaler for AMP
+        self.scaler = amp.GradScaler(device=self.device, enabled=self.amp_enabled and config.setup.amp.scaler_enabled)
+
 
     def _load_snapshot(self):
         # Maps to the specific device
@@ -63,11 +71,17 @@ class Trainer:
         print(f'Epoch {epoch} | Training checkpoint saved at {self.snapshot_path}')
 
     def _run_batch(self, source, targets):
+        # Does model update step with AMP and gradient scaling
+
         self.optimizer.zero_grad(set_to_none=True)
-        output = self.model(source)
-        loss = F.cross_entropy(output, targets)
-        loss.backward()
-        self.optimizer.step()
+
+        with amp.autocast(device_type=self.device, dtype=self.amp_dtype, enabled=self.amp_enabled):
+            output = self.model(source)
+            loss = F.cross_entropy(output, targets)
+
+        self.scaler.scale(loss).backward()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
 
     def _run_epoch(self, epoch):
         b_sz = len(next(iter(self.train_data))[0])
@@ -126,10 +140,6 @@ def enable_reproducibility(seed, rank):
 
 
 def init_ddp(config):
-    # Gets accelerator and device
-    acc = torch.accelerator.current_accelerator()
-    device = torch.device(f'{acc}:{config.local_rank}')
-
     # No need for this since torchrun already specifies master addr and port
     #os.environ['MASTER_ADDR'] = 'localhost'
     #os.environ['MASTER_PORT'] = '12355'
@@ -137,19 +147,19 @@ def init_ddp(config):
     # Set num threads per process for OpenMP (used by DDP, see https://github.com/pytorch/pytorch/blob/65e6194aeb3269a182cfe2c05c122159da12770f/torch/distributed/run.py#L597-L608)
     # Should be set to num_cpu_threads / num_processes_per_node, that way you have that many threads for each process in the node
     num_cpus = os.cpu_count()
-    os.environ['OMP_NUM_THREADS'] = num_cpus // config.local_world_size + (1 if config.local_rank > num_cpus % config.local_world_size else 0)
+    os.environ['OMP_NUM_THREADS'] = num_cpus // config.setup.ddp.local_world_size + (1 if config.setup.ddp.local_rank > num_cpus % config.setup.ddp.local_world_size else 0)
 
     # Best practice when using DDP with torchrun, since the GPU used for this process will always be the one specified by local_rank
     # This prevents hangs or excessive memory usage on GPU:0
-    torch.accelerator.set_device_index(config.local_rank)
+    torch.accelerator.set_device_index(config.setup.ddp.local_rank)
 
     # Creates process group
     # `backend` is the backend used for inter-GPU communication (will be 'nccl' when device is 'cuda')
     # When using torchrun, we don't need to specify rank and world size since it already handles this for us
     # There are two ways to initialize process group: TCP and shared file-system. See both here: https://docs.pytorch.org/docs/stable/distributed.html#tcp-initialization
     # See backends here: https://docs.pytorch.org/docs/stable/distributed.html#backends
-    backend = torch.distributed.get_default_backend_for_device(device)
-    dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.timeout)) #, rank=rank, world_size=world_size)
+    backend = torch.distributed.get_default_backend_for_device(config.device)
+    dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.setup.ddp.timeout)) #, rank=rank, world_size=world_size)
 
 
 def main(args):
@@ -159,7 +169,7 @@ def main(args):
     # This also sets torch.backends.cuda.matmul.allow_tf32, see note in https://docs.pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html
     torch.set_float32_matmul_precision(config.setup.tf32_level)
     torch.backends.cudnn.allow_tf32 = config.setup.tf32_level != 'highest'
-    
+
     # Enable cuDNN auto-tuner
     # Runs a short benchmark, chooses the best kernel on the first step and uses it in the next steps
     # then the first step is slower but all other steps are faster
@@ -167,11 +177,11 @@ def main(args):
     # a rule of thumb would be to run for some time with and without it and check which is faster in the later steps (without considering the first one)
     # This affects reproducibility
     torch.backends.cudnn.benchmark = config.setup.benchmark_kernels
-    
+
     # Enables reproducibility across runs
     enable_reproducibility(config.setup.seed, config.setup.ddp.rank)
 
-    init_ddp(config.setup.ddp)
+    init_ddp(config)
 
     dataset, model, optimizer = load_train_objs()
     train_data = prepare_dataloader(dataset, config.train.batch_size)

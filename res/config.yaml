@@ -7,6 +7,13 @@ setup:
   # 'highest' disables tf32
   # 'high' and 'medium' enable tf32
   tf32_level: 'high'
+  amp:
+    # Enables/disables AMP
+    enabled: true
+    # Enables/disables grad scaling
+    scaler_enabled: true
+    # Sets AMP data type
+    dtype: 'bfloat16'
   # Seed for computations
   seed: 42
   ddp:

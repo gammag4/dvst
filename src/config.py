@@ -4,16 +4,22 @@ from omegaconf import OmegaConf
 from easydict import EasyDict as edict
 
 from src import latent_aggregators
+import torch
 
 
 def process_config(config):
-    config.model.latent_aggregator = latent_aggregators.__dict__[config.model.latent_aggregator]
-    
     # Torchrun already sets local and global ranks as environment variables
     config.setup.ddp.world_size = int(os.environ['WORLD_SIZE'])
     config.setup.ddp.local_world_size = int(os.environ['LOCAL_WORLD_SIZE'])
     config.setup.ddp.rank = int(os.environ['RANK'])
     config.setup.ddp.local_rank = int(os.environ['LOCAL_RANK'])
+
+    acc = torch.accelerator.current_accelerator()
+    config.setup.device = torch.device(f'{acc}:{config.setup.ddp.local_rank}')
+    
+    config.setup.amp.dtype = torch.__dict__[config.setup.amp.dtype]
+    
+    config.model.latent_aggregator = latent_aggregators.__dict__[config.model.latent_aggregator]
     
     return config
 
