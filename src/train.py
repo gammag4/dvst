@@ -22,21 +22,19 @@ class Trainer:
         model: torch.nn.Module,
         train_data: DataLoader,
         optimizer: torch.optim.Optimizer,
-        local_rank: int,
-        rank: int,
         config
     ) -> None:
-        self.local_rank = local_rank
-        self.rank = rank
+        self.local_rank = config.setup.ddp.local_rank
+        self.rank = config.setup.ddp.rank
         self.model = model.to(self.local_rank)
         self.train_data = train_data
         self.optimizer = optimizer
-        self.save_every = config.save_every
+        self.save_every = config.train.save_every
 
         # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing snapshot
         # Starts from snapshot if exists
         self.epochs_run = 0
-        self.snapshot_path = config.snapshot_path
+        self.snapshot_path = config.train.snapshot_path
         if os.path.exists(self.snapshot_path):
             print('Loading snapshot')
             self._load_snapshot()
@@ -127,10 +125,10 @@ def enable_reproducibility(seed, rank):
     # TODO check https://docs.pytorch.org/docs/stable/notes/randomness.html#dataloader
 
 
-def init_ddp(local_world_size, local_rank, config):
+def init_ddp(config):
     # Gets accelerator and device
     acc = torch.accelerator.current_accelerator()
-    device = torch.device(f'{acc}:{local_rank}')
+    device = torch.device(f'{acc}:{config.local_rank}')
 
     # No need for this since torchrun already specifies master addr and port
     #os.environ['MASTER_ADDR'] = 'localhost'
@@ -139,11 +137,11 @@ def init_ddp(local_world_size, local_rank, config):
     # Set num threads per process for OpenMP (used by DDP, see https://github.com/pytorch/pytorch/blob/65e6194aeb3269a182cfe2c05c122159da12770f/torch/distributed/run.py#L597-L608)
     # Should be set to num_cpu_threads / num_processes_per_node, that way you have that many threads for each process in the node
     num_cpus = os.cpu_count()
-    os.environ['OMP_NUM_THREADS'] = num_cpus // local_world_size + (1 if local_rank > num_cpus % local_world_size else 0)
+    os.environ['OMP_NUM_THREADS'] = num_cpus // config.local_world_size + (1 if config.local_rank > num_cpus % config.local_world_size else 0)
 
     # Best practice when using DDP with torchrun, since the GPU used for this process will always be the one specified by local_rank
     # This prevents hangs or excessive memory usage on GPU:0
-    torch.accelerator.set_device_index(local_rank)
+    torch.accelerator.set_device_index(config.local_rank)
 
     # Creates process group
     # `backend` is the backend used for inter-GPU communication (will be 'nccl' when device is 'cuda')
@@ -154,13 +152,9 @@ def init_ddp(local_world_size, local_rank, config):
     dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.timeout)) #, rank=rank, world_size=world_size)
 
 
-def main(config):
-    # Torchrun already sets local and global ranks as environment variables
-    world_size = int(os.environ['WORLD_SIZE'])
-    local_world_size = int(os.environ['LOCAL_WORLD_SIZE'])
-    rank = int(os.environ['RANK'])
-    local_rank = int(os.environ['LOCAL_RANK'])
-    
+def main(args):
+    config = load_config(args.config_file)
+
     # Allows tf32 optimization (lower float32 precision with higher speed)
     # This also sets torch.backends.cuda.matmul.allow_tf32, see note in https://docs.pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html
     torch.set_float32_matmul_precision(config.setup.tf32_level)
@@ -175,15 +169,15 @@ def main(config):
     torch.backends.cudnn.benchmark = config.setup.benchmark_kernels
     
     # Enables reproducibility across runs
-    enable_reproducibility(config.setup.seed, rank)
+    enable_reproducibility(config.setup.seed, config.setup.ddp.rank)
 
-    init_ddp(local_world_size, local_rank, config.setup.ddp)
+    init_ddp(config.setup.ddp)
 
     dataset, model, optimizer = load_train_objs()
     train_data = prepare_dataloader(dataset, config.train.batch_size)
     # We can also do a distributed evaluation by also using distributed sampler in the evaluation data
     # test_data = prepare_dataloader(test_dataset, config.train.batch_size)
-    trainer = Trainer(model, train_data, optimizer, local_rank, rank, config.train)
+    trainer = Trainer(model, train_data, optimizer, config)
     trainer.train(config.train.total_epochs)
 
     # Destroys process group
@@ -196,8 +190,6 @@ if __name__ == '__main__':
     parser.add_argument('--config_file', type=str, help='Path to config file')
     args = parser.parse_args()
 
-    config = load_config(args.config_file)
-
     # No need for this when using torchrun
     # # no "rank" arg since mp.spawn already passes "rank" down as first argument
     # # we set nprocs=world_size to create as many processes as the number of GPUs (1 process per GPU)
@@ -206,7 +198,7 @@ if __name__ == '__main__':
     # #mp.spawn(main, args=(config), nprocs=world_size)
 
     # torchrun already handles setting up env variables and launching processes on the appropriate nodes, so we just call main
-    main(config)
+    main(args)
 
     # TODO On using numactl with torchrun:
     # https://github.com/pytorch/pytorch/issues/115305#issuecomment-1845957682
