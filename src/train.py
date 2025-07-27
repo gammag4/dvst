@@ -63,7 +63,7 @@ class Trainer:
         print(f'Epoch {epoch} | Training checkpoint saved at {self.snapshot_path}')
 
     def _run_batch(self, source, targets):
-        self.optimizer.zero_grad()
+        self.optimizer.zero_grad(set_to_none=True)
         output = self.model(source)
         loss = F.cross_entropy(output, targets)
         loss.backward()
