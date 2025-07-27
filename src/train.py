@@ -110,6 +110,8 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
 
 
 def enable_reproducibility(seed, rank):
+    # TODO this wont work if restarted
+
     # https://docs.pytorch.org/docs/stable/notes/randomness.html
     # https://discuss.pytorch.org/t/difference-between-torch-manual-seed-and-torch-cuda-manual-seed/13848
 
