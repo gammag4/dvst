@@ -47,9 +47,10 @@ class Trainer:
         self.model = DDP(self.model, device_ids=[self.local_rank])
 
     def _load_snapshot(self):
-        # Maps to the specific cuda device
-        # This prevents processes from using others' devices
-        snapshot = torch.load(self.snapshot_path, map_location=f'cuda:{self.local_rank}')
+        # Maps to the specific device
+        # This prevents processes from using others' devices (when set to accelerator:local_rank)
+        # TODO I put 'cpu' bc it seems like most people use that, need to check that
+        snapshot = torch.load(self.snapshot_path, map_location='cpu')
         self.model.load_state_dict(snapshot['MODEL_STATE'])
         self.epochs_run = snapshot['EPOCHS_RUN']
         print(f'Resuming training from snapshot at Epoch {self.epochs_run}')
@@ -125,6 +126,10 @@ def enable_reproducibility(seed, rank):
 
 
 def init_ddp(local_world_size, local_rank, config):
+    # Gets accelerator and device
+    acc = torch.accelerator.current_accelerator()
+    device = torch.device(f'{acc}:{local_rank}')
+
     # No need for this since torchrun already specifies master addr and port
     #os.environ['MASTER_ADDR'] = 'localhost'
     #os.environ['MASTER_PORT'] = '12355'
@@ -136,14 +141,15 @@ def init_ddp(local_world_size, local_rank, config):
 
     # Best practice when using DDP with torchrun, since the GPU used for this process will always be the one specified by local_rank
     # This prevents hangs or excessive memory usage on GPU:0
-    torch.cuda.set_device(local_rank)
+    torch.accelerator.set_device_index(local_rank)
 
     # Creates process group
-    # NCCL is a NVIDIA backend used for inter-GPU communication
+    # `backend` is the backend used for inter-GPU communication (will be 'nccl' when device is 'cuda')
     # When using torchrun, we don't need to specify rank and world size since it already handles this for us
     # There are two ways to initialize process group: TCP and shared file-system. See both here: https://docs.pytorch.org/docs/stable/distributed.html#tcp-initialization
     # See backends here: https://docs.pytorch.org/docs/stable/distributed.html#backends
-    dist.init_process_group(backend='nccl', timeout=datetime.timedelta(seconds=config.timeout)) #, rank=rank, world_size=world_size)
+    backend = torch.distributed.get_default_backend_for_device(device)
+    dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.timeout)) #, rank=rank, world_size=world_size)
 
 
 def main(config):
@@ -193,7 +199,7 @@ if __name__ == '__main__':
     # No need for this when using torchrun
     # # no "rank" arg since mp.spawn already passes "rank" down as first argument
     # # we set nprocs=world_size to create as many processes as the number of GPUs (1 process per GPU)
-    # #world_size = torch.cuda.device_count()
+    # #world_size = torch.accelerator.device_count()
     # More details here: https://docs.pytorch.org/docs/stable/distributed.html#spawn-utility
     # #mp.spawn(main, args=(config), nprocs=world_size)
 
