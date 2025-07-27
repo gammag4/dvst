@@ -51,15 +51,15 @@ class Trainer:
         # This prevents processes from using others' devices (when set to accelerator:local_rank)
         # TODO I put 'cpu' bc it seems like most people use that, need to check that
         snapshot = torch.load(self.snapshot_path, map_location='cpu')
-        self.model.load_state_dict(snapshot['MODEL_STATE'])
-        self.epochs_run = snapshot['EPOCHS_RUN']
+        self.model.load_state_dict(snapshot['model_state'])
+        self.epochs_run = snapshot['epochs_run']
         print(f'Resuming training from snapshot at Epoch {self.epochs_run}')
 
     def _save_snapshot(self, epoch):
         # We need .module to access model's parameters since it has been wrapped by DDP
         snapshot = {
-            'MODEL_STATE': self.model.module.state_dict(),
-            'EPOCHS_RUN': epoch,
+            'model_state': self.model.module.state_dict(),
+            'epochs_run': epoch,
         }
         torch.save(snapshot, self.snapshot_path)
         print(f'Epoch {epoch} | Training checkpoint saved at {self.snapshot_path}')
