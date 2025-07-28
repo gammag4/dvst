@@ -103,18 +103,23 @@ class Trainer:
         # This prevents processes from using others' devices (when set to accelerator:local_rank)
         # TODO I put 'cpu' bc it seems like most people use that, need to check that
         checkpoint = torch.load(self.checkpoint_path, map_location='cpu')
+
         self.model.load_state_dict(checkpoint['model'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.scaler.load_state_dict(checkpoint['scaler'])
         self.epochs_run = checkpoint['epochs_run']
+
         print(f'Resuming training from checkpoint at Epoch {self.epochs_run}')
 
     def _save_checkpoint(self, epoch):
         # We need .module to access model's parameters since it has been wrapped by DDP
         checkpoint = {
             'model': self.model.module.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
             'scaler': self.scaler.state_dict(),
             'epochs_run': epoch,
         }
+
         torch.save(checkpoint, self.checkpoint_path)
         print(f'Epoch {epoch} | Training checkpoint saved at {self.checkpoint_path}')
         
