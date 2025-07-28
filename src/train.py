@@ -31,7 +31,7 @@ class Trainer:
         self.train_data = train_data
         self.optimizer = optimizer
         self.save_every = config.train.save_every
-        self.device = config.device
+        self.device = config.setup.device
         self.amp_enabled = config.setup.amp.enabled
         self.amp_dtype = config.setup.amp.dtype
         self.grad_clipping_enabled = config.train.grad_clipping.enabled
@@ -166,7 +166,7 @@ def init_ddp(config):
     # When using torchrun, we don't need to specify rank and world size since it already handles this for us
     # There are two ways to initialize process group: TCP and shared file-system. See both here: https://docs.pytorch.org/docs/stable/distributed.html#tcp-initialization
     # See backends here: https://docs.pytorch.org/docs/stable/distributed.html#backends
-    backend = torch.distributed.get_default_backend_for_device(config.device)
+    backend = torch.distributed.get_default_backend_for_device(config.setup.device)
     dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.setup.ddp.timeout)) #, rank=rank, world_size=world_size)
 
 
