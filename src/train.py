@@ -18,6 +18,7 @@ from datautils import MyTrainDataset
 
 
 class GradScaler(amp.GradScaler):
+    # Gradient Scaler with batch replay
     def __init__(self, device, enabled, batch_replay_enabled, max_replays):
         super().__init__(device=device, enabled=enabled)
         self.batch_replay_enabled = batch_replay_enabled
@@ -129,21 +130,37 @@ class Trainer:
     def _run_batch(self, source, targets):
         self.optimizer.zero_grad(set_to_none=True)
 
-        # AMP
+        # AMP: Casts operations to mixed precision
         with amp.autocast(device_type=self.device, dtype=self.amp_dtype, enabled=self.amp_enabled):
+            # output.dtype is bfloat16 because linear layers autocast to bfloat16
             output = self.model(source)
+            # loss.dtype is float32 because mse_loss layers autocast to float32
             loss = F.cross_entropy(output, targets)
 
+        # Exits autocast before backward()
+        # Backward passes under autocast are not recommended
+        # Backward ops run in the same dtype autocast chose for corresponding forward ops
+
+        # Scales the loss, and calls backward()
+        # to create scaled gradients
         self.scaler.scale(loss).backward()
+        
+        # All gradients are scaled in this region up to scaler.step(optimizer), so they need to be unscaled to be used
+        # Unscales the gradients of optimizer's assigned params in-place
         self.scaler.unscale_(self.optimizer)
 
         # Gradient clipping
         if self.grad_clipping_enabled:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm) # TODO
         
-        # Skips steps with inf/nan gradients
+        # Unscales gradients (if not unscaled before) and calls or skips optimizer.step()
+        # It skips if there are infs or NaNs in grads
+        # Since we called unscale_ before, it will not unscale gradients again
         self.scaler.step(self.optimizer)
+        
+        # Updates the scale for next iteration
         self.scaler.update()
+        
         return self._should_replay_batch()
 
     def _run_epoch(self, epoch):
