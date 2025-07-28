@@ -38,6 +38,22 @@ class GradScaler(amp.GradScaler):
         else:
             self.num_replays = 0
             self.should_replay_batch = False
+    
+    def state_dict(self):
+        return {
+            'batch_replay_enabled': self.batch_replay_enabled,
+            'max_replays': self.max_replays,
+            'should_replay_batch': self.should_replay_batch,
+            'num_replays': self.num_replays,
+            **super().state_dict()
+        }
+    
+    def load_state_dict(self, state_dict):
+        self.batch_replay_enabled = state_dict.pop('batch_replay_enabled')
+        self.max_replays = state_dict.pop('max_replays')
+        self.should_replay_batch = state_dict.pop('should_replay_batch')
+        self.num_replays = state_dict.pop('num_replays')
+        return super().load_state_dict(state_dict)
 
 
 class Trainer:
@@ -88,6 +104,7 @@ class Trainer:
         # TODO I put 'cpu' bc it seems like most people use that, need to check that
         snapshot = torch.load(self.snapshot_path, map_location='cpu')
         self.model.load_state_dict(snapshot['model_state'])
+        self.scaler.load_state_dict(snapshot['scaler_state'])
         self.epochs_run = snapshot['epochs_run']
         print(f'Resuming training from snapshot at Epoch {self.epochs_run}')
 
@@ -95,6 +112,7 @@ class Trainer:
         # We need .module to access model's parameters since it has been wrapped by DDP
         snapshot = {
             'model_state': self.model.module.state_dict(),
+            'scaler_state': self.scaler.state_dict(),
             'epochs_run': epoch,
         }
         torch.save(snapshot, self.snapshot_path)
