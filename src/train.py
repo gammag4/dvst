@@ -25,17 +25,18 @@ class Trainer:
         optimizer: torch.optim.Optimizer,
         config
     ) -> None:
+        self.device = config.setup.device
         self.local_rank = config.setup.ddp.local_rank
         self.rank = config.setup.ddp.rank
-        self.model = model.to(self.local_rank)
-        self.train_data = train_data
-        self.optimizer = optimizer
         self.save_every = config.train.save_every
-        self.device = config.setup.device
         self.amp_enabled = config.setup.amp.enabled
         self.amp_dtype = config.setup.amp.dtype
         self.grad_clipping_enabled = config.train.grad_clipping.enabled
         self.max_grad_norm = config.train.grad_clipping.max_norm
+
+        self.model = model.to(self.local_rank)
+        self.train_data = train_data
+        self.optimizer = optimizer
 
         # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing snapshot
         # Starts from snapshot if exists
@@ -52,7 +53,6 @@ class Trainer:
         
         # Gradient scaler for AMP
         self.scaler = amp.GradScaler(device=self.device, enabled=self.amp_enabled and config.setup.amp.scaler_enabled)
-
 
     def _load_snapshot(self):
         # Maps to the specific device
