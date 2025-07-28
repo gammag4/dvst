@@ -34,6 +34,8 @@ class Trainer:
         self.device = config.device
         self.amp_enabled = config.setup.amp.enabled
         self.amp_dtype = config.setup.amp.dtype
+        self.grad_clipping_enabled = config.train.grad_clipping.enabled
+        self.max_grad_norm = config.train.grad_clipping.max_norm
 
         # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing snapshot
         # Starts from snapshot if exists
@@ -71,15 +73,21 @@ class Trainer:
         print(f'Epoch {epoch} | Training checkpoint saved at {self.snapshot_path}')
 
     def _run_batch(self, source, targets):
-        # Does model update step with AMP and gradient scaling
-
         self.optimizer.zero_grad(set_to_none=True)
 
+        # AMP
         with amp.autocast(device_type=self.device, dtype=self.amp_dtype, enabled=self.amp_enabled):
             output = self.model(source)
             loss = F.cross_entropy(output, targets)
 
         self.scaler.scale(loss).backward()
+        self.scaler.unscale_(self.optimizer)
+
+        # Gradient clipping
+        if self.grad_clipping_enabled:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm) # TODO
+        
+        # Skips steps with inf/nan gradients
         self.scaler.step(self.optimizer)
         self.scaler.update()
 
