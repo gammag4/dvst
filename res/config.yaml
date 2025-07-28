@@ -10,10 +10,16 @@ setup:
   amp:
     # Enables/disables AMP
     enabled: true
-    # Enables/disables grad scaling
-    scaler_enabled: true
     # Sets AMP data type
     dtype: 'bfloat16'
+    scaler:
+      # Enables/disables grad scaling
+      enabled: true
+      batch_replay:
+        # Enables/disables batch replaying
+        enabled: true
+        # Sets maximum number of replays for a batch before giving up
+        max_replays: 4
   # Seed for computations
   seed: 42
   ddp:

@@ -17,6 +17,29 @@ from src.config import load_config
 from datautils import MyTrainDataset
 
 
+class GradScaler(amp.GradScaler):
+    def __init__(self, device, enabled, batch_replay_enabled, max_replays):
+        super().__init__(device=device, enabled=enabled)
+        self.batch_replay_enabled = batch_replay_enabled
+        self.max_replays = max_replays
+        self.should_replay_batch = False
+        self.num_replays = 0
+    
+    def update(self):
+        old_scale = self.get_scale()
+        super().update()
+
+        # Checks whether current batch has been skipped due to inf/nan grads
+        # If the scale is smaller than before, it means that it updated its scale because of inf/nan grads
+        if self.batch_replay_enabled and self.get_scale() < old_scale and self.num_replays < self.max_replays:
+            if self.should_replay_batch:
+                self.num_replays += 1
+            self.should_replay_batch = True
+        else:
+            self.num_replays = 0
+            self.should_replay_batch = False
+
+
 class Trainer:
     def __init__(
         self,
@@ -52,7 +75,12 @@ class Trainer:
         self.model = DDP(self.model, device_ids=[self.local_rank])
         
         # Gradient scaler for AMP
-        self.scaler = amp.GradScaler(device=self.device, enabled=self.amp_enabled and config.setup.amp.scaler_enabled)
+        self.scaler = GradScaler(
+            device=self.device,
+            enabled=self.amp_enabled and config.setup.amp.scaler.enabled,
+            batch_replay_enabled=config.setup.amp.scaler.batch_replay.enabled,
+            max_replays=config.setup.amp.scaler.batch_replay.max_replays,
+        )
 
     def _load_snapshot(self):
         # Maps to the specific device
@@ -71,6 +99,9 @@ class Trainer:
         }
         torch.save(snapshot, self.snapshot_path)
         print(f'Epoch {epoch} | Training checkpoint saved at {self.snapshot_path}')
+        
+    def _should_replay_batch(self):
+        return self.scaler.should_replay_batch()
 
     def _run_batch(self, source, targets):
         self.optimizer.zero_grad(set_to_none=True)
@@ -90,17 +121,22 @@ class Trainer:
         # Skips steps with inf/nan gradients
         self.scaler.step(self.optimizer)
         self.scaler.update()
+        return self._should_replay_batch()
 
     def _run_epoch(self, epoch):
         b_sz = len(next(iter(self.train_data))[0])
         print(f'[GPU{self.rank}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}')
+
         # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
         # See: https://docs.pytorch.org/docs/stable/data.html
         self.train_data.sampler.set_epoch(epoch)
         for source, targets in self.train_data:
             source = source.to(self.local_rank)
             targets = targets.to(self.local_rank)
-            self._run_batch(source, targets)
+            
+            # Batch replaying
+            while self._run_batch(source, targets):
+                pass
 
     def train(self, max_epochs: int):
         for epoch in range(self.epochs_run, max_epochs):
@@ -110,7 +146,7 @@ class Trainer:
                 self._save_snapshot(epoch)
 
 
-def load_train_objs():
+def load_train_objs():#
     train_set = MyTrainDataset(2048)  # load your dataset
     model = torch.nn.Linear(20, 1)  # load your model
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
