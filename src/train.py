@@ -77,13 +77,13 @@ class Trainer:
         self.train_data = train_data
         self.optimizer = optimizer
 
-        # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing snapshot
-        # Starts from snapshot if exists
+        # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing checkpoint
+        # Starts from checkpoint if exists
         self.epochs_run = 0
-        self.snapshot_path = config.train.snapshot_path
-        if os.path.exists(self.snapshot_path):
-            print('Loading snapshot')
-            self._load_snapshot()
+        self.checkpoint_path = config.train.checkpoint_path
+        if os.path.exists(self.checkpoint_path):
+            print('Loading checkpoint')
+            self._load_checkpoint()
 
         # We wrap the model with DDP, giving the GPU IDs where the model is (only in local_rank in this case)
         # This also works for multi-GPU models, but in that case, device_ids and output_device must NOT be set,
@@ -98,25 +98,25 @@ class Trainer:
             max_replays=config.setup.amp.scaler.batch_replay.max_replays,
         )
 
-    def _load_snapshot(self):
+    def _load_checkpoint(self):
         # Maps to the specific device
         # This prevents processes from using others' devices (when set to accelerator:local_rank)
         # TODO I put 'cpu' bc it seems like most people use that, need to check that
-        snapshot = torch.load(self.snapshot_path, map_location='cpu')
-        self.model.load_state_dict(snapshot['model_state'])
-        self.scaler.load_state_dict(snapshot['scaler_state'])
-        self.epochs_run = snapshot['epochs_run']
-        print(f'Resuming training from snapshot at Epoch {self.epochs_run}')
+        checkpoint = torch.load(self.checkpoint_path, map_location='cpu')
+        self.model.load_state_dict(checkpoint['model'])
+        self.scaler.load_state_dict(checkpoint['scaler'])
+        self.epochs_run = checkpoint['epochs_run']
+        print(f'Resuming training from checkpoint at Epoch {self.epochs_run}')
 
-    def _save_snapshot(self, epoch):
+    def _save_checkpoint(self, epoch):
         # We need .module to access model's parameters since it has been wrapped by DDP
-        snapshot = {
-            'model_state': self.model.module.state_dict(),
-            'scaler_state': self.scaler.state_dict(),
+        checkpoint = {
+            'model': self.model.module.state_dict(),
+            'scaler': self.scaler.state_dict(),
             'epochs_run': epoch,
         }
-        torch.save(snapshot, self.snapshot_path)
-        print(f'Epoch {epoch} | Training checkpoint saved at {self.snapshot_path}')
+        torch.save(checkpoint, self.checkpoint_path)
+        print(f'Epoch {epoch} | Training checkpoint saved at {self.checkpoint_path}')
         
     def _should_replay_batch(self):
         return self.scaler.should_replay_batch()
@@ -161,7 +161,7 @@ class Trainer:
             self._run_epoch(epoch)
             # Ensures only saves for first GPU to prevent redundancy
             if self.rank == 0 and epoch % self.save_every == 0:
-                self._save_snapshot(epoch)
+                self._save_checkpoint(epoch)
 
 
 def load_train_objs():#
