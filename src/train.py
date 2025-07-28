@@ -207,10 +207,6 @@ def enable_reproducibility(seed, rank):
 
 
 def init_ddp(config):
-    # No need for this since torchrun already specifies master addr and port
-    #os.environ['MASTER_ADDR'] = 'localhost'
-    #os.environ['MASTER_PORT'] = '12355'
-
     # Set num threads per process for OpenMP (used by DDP, see https://github.com/pytorch/pytorch/blob/65e6194aeb3269a182cfe2c05c122159da12770f/torch/distributed/run.py#L597-L608)
     # Should be set to num_cpu_threads / num_processes_per_node, that way you have that many threads for each process in the node
     num_cpus = os.cpu_count()
@@ -226,7 +222,7 @@ def init_ddp(config):
     # There are two ways to initialize process group: TCP and shared file-system. See both here: https://docs.pytorch.org/docs/stable/distributed.html#tcp-initialization
     # See backends here: https://docs.pytorch.org/docs/stable/distributed.html#backends
     backend = torch.distributed.get_default_backend_for_device(config.setup.device)
-    dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.setup.ddp.timeout)) #, rank=rank, world_size=world_size)
+    dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.setup.ddp.timeout))
 
 
 def main(args):
@@ -257,7 +253,6 @@ def main(args):
     trainer = Trainer(model, train_data, optimizer, config)
     trainer.train(config.train.total_epochs)
 
-    # Destroys process group
     dist.destroy_process_group()
 
 
@@ -266,13 +261,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='simple distributed training job')
     parser.add_argument('--config_file', type=str, help='Path to config file')
     args = parser.parse_args()
-
-    # No need for this when using torchrun
-    # # no "rank" arg since mp.spawn already passes "rank" down as first argument
-    # # we set nprocs=world_size to create as many processes as the number of GPUs (1 process per GPU)
-    # #world_size = torch.accelerator.device_count()
-    # More details here: https://docs.pytorch.org/docs/stable/distributed.html#spawn-utility
-    # #mp.spawn(main, args=(config), nprocs=world_size)
 
     # torchrun already handles setting up env variables and launching processes on the appropriate nodes, so we just call main
     main(args)
