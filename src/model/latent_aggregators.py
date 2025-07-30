@@ -1,6 +1,6 @@
 import torch
 
-from src.dvst_encoder import DVSTEncoder
+from .encoder import DVSTEncoder
 
 
 def regular_latent_aggregator(self: DVSTEncoder, next_frame_embeds, current_latent_embeds):
