@@ -152,7 +152,7 @@ class Trainer:
         # Gradient clipping
         if self.grad_clipping_enabled:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm) # TODO
-        
+
         # Unscales gradients (if not unscaled before) and calls or skips optimizer.step()
         # It skips if there are infs or NaNs in grads
         # Since we called unscale_ before, it will not unscale gradients again
@@ -193,15 +193,20 @@ def load_train_objs():#
     return train_set, model, optimizer
 
 
-def prepare_dataloader(dataset: Dataset, batch_size: int):
+def prepare_dataloader(dataset: Dataset, config):
     return DataLoader(
         dataset,
-        batch_size=batch_size,
-        pin_memory=True,
+        batch_size=config.batch_size,
         # Should be false bc using sampler
         shuffle=False,
         # Sampler that sends different batches to different gpus
-        sampler=DistributedSampler(dataset)
+        sampler=DistributedSampler(dataset),
+        num_workers=config.num_workers,
+        prefetch_factor=config.prefetch_factor,
+        persistent_workers=False, # TODO check
+        pin_memory=True, # TODO check
+        drop_last=False, # TODO check
+        in_order=False # TODO check
     )
 
 
@@ -264,9 +269,9 @@ def main(args):
     init_ddp(config)
 
     dataset, model, optimizer = load_train_objs()
-    train_data = prepare_dataloader(dataset, config.train.batch_size)
+    train_data = prepare_dataloader(dataset, config.train.data)
     # We can also do a distributed evaluation by also using distributed sampler in the evaluation data
-    # test_data = prepare_dataloader(test_dataset, config.train.batch_size)
+    # test_data = prepare_dataloader(test_dataset, config.train.data)
     trainer = Trainer(model, train_data, optimizer, config)
     trainer.train(config.train.total_epochs)
 
