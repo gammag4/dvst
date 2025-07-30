@@ -27,7 +27,6 @@ class DVSTEncoder(nn.Module):
             self.config.model.qk_norm.enabled,
             self.config.model.qk_norm.eps,
             nn.GELU,
-            None,
             self.config.train.dropout
         )
         

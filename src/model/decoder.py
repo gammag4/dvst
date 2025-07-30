@@ -24,14 +24,13 @@ class DVSTDecoder(nn.Module):
             self.config.model.qk_norm.enabled,
             self.config.model.qk_norm.eps,
             nn.GELU,
-            None,
             self.config.train.dropout
         )
 
-        self.embeds_to_patch_embeds = nn.Sequential([
+        self.embeds_to_patch_embeds = nn.Sequential(
             nn.Linear(in_features=self.d_model, out_features=self.C * self.p ** 2),
             nn.Sigmoid()
-        ])
+        )
 
     # For now, generating only a single image at a time is supported, so, in all tensors, B=1
     def forward(self, latent_embeds, Kinv, R, t, time, hw):

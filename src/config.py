@@ -9,10 +9,10 @@ import torch
 
 def process_config(config):
     # Torchrun already sets local and global ranks as environment variables
-    config.setup.ddp.world_size = int(os.environ['WORLD_SIZE'])
-    config.setup.ddp.local_world_size = int(os.environ['LOCAL_WORLD_SIZE'])
-    config.setup.ddp.rank = int(os.environ['RANK'])
-    config.setup.ddp.local_rank = int(os.environ['LOCAL_RANK'])
+    config.setup.ddp.world_size = int(os.environ.get('WORLD_SIZE', 1))
+    config.setup.ddp.local_world_size = int(os.environ.get('LOCAL_WORLD_SIZE', 1))
+    config.setup.ddp.rank = int(os.environ.get('RANK', 0))
+    config.setup.ddp.local_rank = int(os.environ.get('LOCAL_RANK', 0))
 
     acc = torch.accelerator.current_accelerator()
     config.setup.device = torch.device(f'{acc}:{config.setup.ddp.local_rank}')

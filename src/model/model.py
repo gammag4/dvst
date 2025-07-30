@@ -14,9 +14,9 @@ class DVST(nn.Module):
         
         self.config = config
         
-        self.pose_encoder = PoseEncoder(self.config.model)
-        self.encoder = DVSTEncoder(self.config.model, self.pose_encoder)
-        self.decoder = DVSTDecoder(self.config.model, self.pose_encoder)
+        self.pose_encoder = PoseEncoder(self.config)
+        self.encoder = DVSTEncoder(self.config, self.pose_encoder)
+        self.decoder = DVSTDecoder(self.config, self.pose_encoder)
         
     # We assume videos are not big enough so that they need to be loaded in batches into memory #TODO load in batches if size exceed n_frames (create new scene for each batch of n_frames)
     def forward(self, scene, Kinv, R, t, time, hw):
