@@ -27,34 +27,33 @@ class FF(nn.Module):
 class FMHA(nn.Module):
     # attn_bias is the bias added to QK^T matrix before softmax, and also serves as attention mask by setting -inf in values in all values to mask
     # attn_bias can either come from xformers.ops.fmha.attn_bias (faster) or be a tensor (slower)
-    def __init__(self, attn_bias, dropout):
+    def __init__(self, dropout):
         super().__init__()
         
-        self.attn_bias = attn_bias
         self.dropout = dropout
 
-    def forward(self, Q, K, V):
+    def forward(self, Q, K, V, attn_bias=None):
         # Q: (B, Mq, H, Kqk), K: (B, Mkv, H, Kqk), V: (B, Mkv, H, Kv)
         # Returns: (B, Mq, H, Kv)
         # B batch size, M sequence length, H number of heads, K embedding size per head
 
         return xops.memory_efficient_attention(
             Q, K, V,
-            attn_bias=self.attn_bias,
+            attn_bias=attn_bias,
             p=self.dropout if self.training else 0.0,
             op=xops.fmha.MemoryEfficientAttentionFlashAttentionOp
         )
 
 
 class SelfAttn(nn.Module):
-    def __init__(self, d_model, n_heads, use_qk_norm, qk_norm_eps, attn_bias, dropout):
+    def __init__(self, d_model, n_heads, use_qk_norm, qk_norm_eps, dropout):
         super().__init__()
 
         self.use_qk_norm = use_qk_norm
         d_inner = d_model # TODO check with different inner_d_model later
         d_head = d_inner / n_heads
 
-        self.fmha = FMHA(attn_bias, dropout)
+        self.fmha = FMHA(dropout)
 
         self.W_Q, self.W_K, self.W_V = [nn.Linear(d_model, d_inner, bias=False) for _ in range(3)]
         self.W_O = nn.Sequential(
@@ -68,7 +67,7 @@ class SelfAttn(nn.Module):
         if self.use_qk_norm:
             self.q_norm, self.k_norm = [nn.RMSNorm(d_head, qk_norm_eps) for _ in range(2)]
 
-    def forward(self, X):
+    def forward(self, X, attn_bias=None):
         Q = self.split_heads(self.W_Q(X))
         K = self.split_heads(self.W_K(X))
         V = self.split_heads(self.W_V(X))
@@ -78,7 +77,7 @@ class SelfAttn(nn.Module):
             Q = self.q_norm(Q)
             K = self.k_norm(K)
 
-        X = self.fmha(Q, K, V)
+        X = self.fmha(Q, K, V, attn_bias=attn_bias)
         X = self.join_heads(X)
 
         X = self.W_O(X)
@@ -86,36 +85,36 @@ class SelfAttn(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, d_model, n_heads, e_ff, act_layer, attn_bias, dropout):
+    def __init__(self, d_model, n_heads, e_ff, act_layer, dropout):
         super().__init__()
 
         # Using Pre-LN in both layers
         # Also using RMSNorm instead of LayerNorm
 
-        self.mha = nn.Sequential(
-            nn.RMSNorm(d_model),
-            SelfAttn(d_model, n_heads, attn_bias, dropout)
-        )
+        self.norm1 = nn.RMSNorm(d_model)
+        self.attn = SelfAttn(d_model, n_heads, dropout)
 
         self.ff = nn.Sequential(
             nn.RMSNorm(d_model),
             FF(d_model, e_ff, act_layer, dropout)
         )
 
-    def forward(self, X):
-        X = self.mha(X) + X
+    def forward(self, X, attn_bias=None):
+        X = self.attn(self.norm1(X), attn_bias=attn_bias) + X
         X = self.ff(X) + X
         return X
 
 
 class Encoder(nn.Module):
-    def __init__(self, n_blocks, d_model, n_heads, e_ff, act_layer, attn_bias, dropout):
+    def __init__(self, n_blocks, d_model, n_heads, e_ff, act_layer, dropout):
         super().__init__()
 
-        blocks = [Block(d_model, n_heads, e_ff, act_layer, attn_bias, dropout) for _ in range(n_blocks)]
+        blocks = [Block(d_model, n_heads, e_ff, act_layer, dropout) for _ in range(n_blocks)]
         self.blocks = nn.Sequential(*blocks)
 
-    def forward(self, X):
+    def forward(self, X, attn_bias=None):
+        for block in self.blocks:
+            X = block(X, attn_bias=attn_bias)
         return self.blocks(X)
 
 
