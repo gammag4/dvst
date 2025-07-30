@@ -5,7 +5,8 @@ import torch
 from torch.utils.data import Dataset
 from torchcodec.decoders import VideoDecoder
 
-from .utils import preprocess_scene_video
+from src.utils import preprocess_scene_video
+
 
 #TODO create test dataset
 class PanopticDataset(Dataset):
