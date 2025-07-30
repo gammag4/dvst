@@ -14,6 +14,7 @@ import torch.distributed as dist
 import torch.amp as amp
 
 from src.config import load_config
+from src.model import DVST
 from datautils import MyTrainDataset
 
 
@@ -186,10 +187,8 @@ class Trainer:
                 self._save_checkpoint(epoch)
 
 
-def load_train_objs():
-    train_set = MyTrainDataset(2048)  # TODO load your dataset
-    model = torch.nn.Linear(20, 1)  # TODO load your model
-    return train_set, model
+def prepare_model(config):
+    return DVST(config=config)
 
 
 def prepare_optimizer(model, config):
@@ -279,10 +278,11 @@ def main(args):
 
     init_ddp(config)
 
-    dataset, model = load_train_objs()
+    train_dataset = MyTrainDataset(2048)  # TODO load your dataset
+    train_data = prepare_dataloader(train_dataset, config.train.data)
     
-    train_data = prepare_dataloader(dataset, config.train.data)
-    
+    model = prepare_model(config.model)
+
     optimizer = prepare_optimizer(model, config.train.optimizer)
     
     # We can also do a distributed evaluation by also using distributed sampler in the evaluation data
