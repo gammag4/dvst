@@ -48,10 +48,13 @@ class FMHA(nn.Module):
 class SelfAttn(nn.Module):
     def __init__(self, d_model, n_heads, use_qk_norm, qk_norm_eps, dropout):
         super().__init__()
+        
+        d_inner = d_model # TODO check with different inner_d_model later
+        
+        assert d_inner % n_heads == 0, f'n_heads should divide d_inner'
 
         self.use_qk_norm = use_qk_norm
-        d_inner = d_model # TODO check with different inner_d_model later
-        d_head = d_inner / n_heads
+        d_head = d_inner // n_heads
 
         self.fmha = FMHA(dropout)
 
@@ -85,14 +88,14 @@ class SelfAttn(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, d_model, n_heads, e_ff, act_layer, dropout):
+    def __init__(self, d_model, n_heads, e_ff, use_qk_norm, qk_norm_eps, act_layer, dropout):
         super().__init__()
 
         # Using Pre-LN in both layers
         # Also using RMSNorm instead of LayerNorm
 
         self.norm1 = nn.RMSNorm(d_model)
-        self.attn = SelfAttn(d_model, n_heads, dropout)
+        self.attn = SelfAttn(d_model, n_heads, use_qk_norm, qk_norm_eps, dropout)
 
         self.ff = nn.Sequential(
             nn.RMSNorm(d_model),
@@ -106,16 +109,15 @@ class Block(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, n_blocks, d_model, n_heads, e_ff, act_layer, dropout):
+    def __init__(self, n_blocks, d_model, n_heads, e_ff, use_qk_norm, qk_norm_eps, act_layer, dropout):
         super().__init__()
 
-        blocks = [Block(d_model, n_heads, e_ff, act_layer, dropout) for _ in range(n_blocks)]
-        self.blocks = nn.Sequential(*blocks)
+        self.blocks = nn.ModuleList([Block(d_model, n_heads, e_ff, use_qk_norm, qk_norm_eps, act_layer, dropout) for _ in range(n_blocks)])
 
     def forward(self, X, attn_bias=None):
         for block in self.blocks:
             X = block(X, attn_bias=attn_bias)
-        return self.blocks(X)
+        return X
 
 
 # TODO check new torch flash attention and compare with xformers:

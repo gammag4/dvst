@@ -37,6 +37,11 @@ model:
   d_model: 192
   # Expansion factor for mlp blocks after attention blocks in each transformer block (embeddings will be expanded to e_ff * d_model dimensions then contracted back to d_model dimensions)
   e_ff: 4
+  qk_norm:
+    # Enables QK-Norm
+    enabled: true
+    # Epsilon for QK-Norm computation
+    eps: 1e-5
   # Number of embedding vectors used as latent space representation for images
   # TODO could compute this based on frame size and video size
   n_lat: 1024
