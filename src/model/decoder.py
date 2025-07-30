@@ -24,7 +24,8 @@ class DVSTDecoder(nn.Module):
             self.config.model.qk_norm.enabled,
             self.config.model.qk_norm.eps,
             nn.GELU,
-            self.config.train.dropout
+            self.config.train.dropout,
+            self.config.model.attn_op
         )
 
         self.embeds_to_patch_embeds = nn.Sequential(

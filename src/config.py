@@ -3,8 +3,9 @@ import os
 from omegaconf import OmegaConf
 from easydict import EasyDict as edict
 
-from src import latent_aggregators
 import torch
+
+from src.utils import import_object
 
 
 def process_config(config):
@@ -17,9 +18,10 @@ def process_config(config):
     acc = torch.accelerator.current_accelerator()
     config.setup.device = torch.device(f'{acc}:{config.setup.ddp.local_rank}')
     
-    config.setup.amp.dtype = torch.__dict__[config.setup.amp.dtype]
-    
-    config.model.latent_aggregator = latent_aggregators.__dict__[config.model.latent_aggregator]
+    config.setup.amp.dtype =import_object(config.setup.amp.dtype)
+
+    config.model.attn_op = import_object(config.model.attn_op)
+    config.model.latent_aggregator = import_object(config.model.latent_aggregator)
     
     return config
 

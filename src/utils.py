@@ -1,3 +1,5 @@
+import importlib
+
 import torch
 from torchcodec.decoders import VideoDecoder
 
@@ -6,6 +8,12 @@ def create_bound_function(self, func):
     # Binds an external function to a class instance as if it was defined in the class
     def new_func(*args, **kwargs): return func(self, *args, **kwargs)
     return new_func
+
+
+def import_object(full_name):
+    s = full_name.split('.')
+    path, name = '.'.join(s[:-1]), s[-1]
+    return importlib.import_module(path).__dict__[name]
 
 
 def colmap_poses_to_intrinsics_extrinsics(data):

@@ -6,12 +6,12 @@ setup:
   # Sets precision for float32 operations in CUDA matmul and cuDNN convolutions
   # 'highest' disables tf32
   # 'high' and 'medium' enable tf32
-  tf32_level: 'high'
+  tf32_level: high
   amp:
     # Enables/disables AMP
     enabled: true
     # Sets AMP data type
-    dtype: 'bfloat16'
+    dtype: torch.bfloat16
     scaler:
       # Enables/disables grad scaling
       enabled: true
@@ -27,14 +27,21 @@ setup:
     timeout: 1800
 
 model:
+  # Patch side length (the images will be broken into patches of size p x p)
+  p: 16
+  # Number of color channels in each frame
+  C: 3
+  # Number of octaves for representing each of the 6 components from plucker rays and the time component
+  n_oct: 6
+
   # Number of layers in transformer encoder
   N_enc: 2
   # Number of layers in transformer decoder
   N_dec: 7
-  # Number of attention heads in both encoder and decoder (n_heads should divide d_model)
-  n_heads: 12
   # Dimension of all the vector representations used in the transformer models (dim for all vector inputs in transformers, not just the embedding vectors that will be the latent representations of scenes, idk why did i put such a confusing name but yeah)
   d_model: 192
+  # Number of attention heads in both encoder and decoder (n_heads should divide d_model)
+  n_heads: 12
   # Expansion factor for mlp blocks after attention blocks in each transformer block (embeddings will be expanded to e_ff * d_model dimensions then contracted back to d_model dimensions)
   e_ff: 4
   qk_norm:
@@ -42,17 +49,14 @@ model:
     enabled: true
     # Epsilon for QK-Norm computation
     eps: 1e-5
+  # Operation used for attention, should be from xops.fmha
+  attn_op: xformers.ops.fmha.MemoryEfficientAttentionFlashAttentionOp
+
   # Number of embedding vectors used as latent space representation for images
   # TODO could compute this based on frame size and video size
   n_lat: 1024
-  # Patch side length (the images will be broken into patches of size p x p)
-  p: 16
-  # Number of octaves for representing each of the 6 components from plucker rays and the time component
-  n_oct: 6
-  # Number of color channels in each frame
-  C: 3
-  # The function that will be used to aggregate latents across frames. Should be one of the functions from src.latent_aggregators
-  latent_aggregator: 'residual_latent_aggregator'
+  # The function that will be used to aggregate latents across frames. Should be one of the functions from src.model.latent_aggregators
+  latent_aggregator: src.model.latent_aggregators.residual_latent_aggregator
   # frames_per_scene is the size of the batches that the videos will be broken into to create scenes
   #   TODO this was from the old idea of breaking scene into smaller batches of 3
   #   TODO test 3 ideas separate:
@@ -71,7 +75,7 @@ train:
     prefetch_factor: 4
   total_epochs: 50
   save_every: 10
-  snapshot_path: 'snapshot.pt'
+  snapshot_path: snapshot.pt
   grad_clipping:
     # Whether to use gradient clipping
     enabled: true
