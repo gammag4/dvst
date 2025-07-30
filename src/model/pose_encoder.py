@@ -63,10 +63,10 @@ class PoseEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.d_model = self.config.model.d_model
-        self.n_oct = self.config.model.n_oct
-        self.C = self.config.model.C
-        self.p = self.config.model.p
+        self.d_model = self.config.d_model
+        self.n_oct = self.config.n_oct
+        self.C = self.config.C
+        self.p = self.config.p
 
         # TODO test two cases, one with parameter (this) and another with two different linear layers one for sources (w/ images) and another for target (w/o images)
         # TODO initialize w gaussian

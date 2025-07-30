@@ -12,23 +12,23 @@ class DVSTEncoder(nn.Module):
         super().__init__()
         
         self.config = config
-        self.n_lat = self.config.model.n_lat
-        self.d_model = self.config.model.d_model
+        self.n_lat = self.config.n_lat
+        self.d_model = self.config.d_model
         
         self.start_latent_embeds = nn.Parameter(torch.zeros((self.n_lat, self.d_model)))
         self.pose_encoder = pose_encoder
-        self.latent_aggregator = create_bound_function(self, self.config.model.latent_aggregator)
+        self.latent_aggregator = create_bound_function(self, self.config.latent_aggregator)
         
         self.transformer = Encoder(
-            self.config.model.N_enc,
-            self.config.model.d_model,
-            self.config.model.n_heads,
-            self.config.model.e_ff,
-            self.config.model.qk_norm.enabled,
-            self.config.model.qk_norm.eps,
+            self.config.N_enc,
+            self.config.d_model,
+            self.config.n_heads,
+            self.config.e_ff,
+            self.config.qk_norm.enabled,
+            self.config.qk_norm.eps,
             self.config.train.dropout,
             nn.GELU,
-            self.config.model.attn_op
+            self.config.attn_op
         )
         
     def forward(self, scene):

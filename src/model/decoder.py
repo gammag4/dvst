@@ -10,22 +10,22 @@ class DVSTDecoder(nn.Module):
         super().__init__()
         
         self.config = config
-        self.C = self.config.model.C
-        self.p = self.config.model.p
-        self.d_model = self.config.model.d_model
+        self.C = self.config.C
+        self.p = self.config.p
+        self.d_model = self.config.d_model
         
         self.pose_encoder = pose_encoder
         
         self.transformer = Encoder(
-            self.config.model.N_dec,
-            self.config.model.d_model,
-            self.config.model.n_heads,
-            self.config.model.e_ff,
-            self.config.model.qk_norm.enabled,
-            self.config.model.qk_norm.eps,
+            self.config.N_dec,
+            self.config.d_model,
+            self.config.n_heads,
+            self.config.e_ff,
+            self.config.qk_norm.enabled,
+            self.config.qk_norm.eps,
             self.config.train.dropout,
             nn.GELU,
-            self.config.model.attn_op
+            self.config.attn_op
         )
 
         self.embeds_to_patch_embeds = nn.Sequential(
