@@ -8,8 +8,10 @@ import xformers.ops as xops
 
 
 class FF(nn.Module):
-    def __init__(self, d_model, e_ff, act_layer, dropout):
+    def __init__(self, d_model, e_ff, dropout, act_layer=None):
         super().__init__()
+        
+        act_layer = nn.GELU if act_layer is None else act_layer
         
         ff_dim = e_ff * d_model
         
@@ -89,7 +91,7 @@ class SelfAttn(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, d_model, n_heads, e_ff, use_qk_norm, qk_norm_eps, act_layer, dropout, attn_op=None):
+    def __init__(self, d_model, n_heads, e_ff, use_qk_norm, qk_norm_eps, dropout, act_layer=None, attn_op=None):
         super().__init__()
 
         # Using Pre-LN in both layers
@@ -100,7 +102,7 @@ class Block(nn.Module):
 
         self.ff = nn.Sequential(
             nn.RMSNorm(d_model),
-            FF(d_model, e_ff, act_layer, dropout)
+            FF(d_model, e_ff, dropout, act_layer)
         )
 
     def forward(self, X, attn_bias=None):
@@ -110,10 +112,10 @@ class Block(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, n_blocks, d_model, n_heads, e_ff, use_qk_norm, qk_norm_eps, act_layer, dropout, attn_op=None):
+    def __init__(self, n_blocks, d_model, n_heads, e_ff, use_qk_norm, qk_norm_eps, dropout, act_layer=None, attn_op=None):
         super().__init__()
 
-        self.blocks = nn.ModuleList([Block(d_model, n_heads, e_ff, use_qk_norm, qk_norm_eps, act_layer, dropout, attn_op=attn_op) for _ in range(n_blocks)])
+        self.blocks = nn.ModuleList([Block(d_model, n_heads, e_ff, use_qk_norm, qk_norm_eps, dropout, act_layer, attn_op=attn_op) for _ in range(n_blocks)])
 
     def forward(self, X, attn_bias=None):
         for block in self.blocks:
