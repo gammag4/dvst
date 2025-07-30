@@ -186,11 +186,22 @@ class Trainer:
                 self._save_checkpoint(epoch)
 
 
-def load_train_objs():#
-    train_set = MyTrainDataset(2048)  # load your dataset
-    model = torch.nn.Linear(20, 1)  # load your model
-    optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
-    return train_set, model, optimizer
+def load_train_objs():
+    train_set = MyTrainDataset(2048)  # TODO load your dataset
+    model = torch.nn.Linear(20, 1)  # TODO load your model
+    return train_set, model
+
+
+def prepare_optimizer(model, config):
+    # Removing parameters that are not optimized
+    params = [p for p in model.parameters() if not p.requires_grad]
+
+    return torch.optim.AdamW(
+        params,
+        lr=config.lr,
+        betas=config.betas,
+        fused=True # TODO Some places report issues so check if this gives errors or nans
+    )
 
 
 def prepare_dataloader(dataset: Dataset, config):
@@ -217,7 +228,7 @@ def enable_reproducibility(seed, rank):
     # https://discuss.pytorch.org/t/difference-between-torch-manual-seed-and-torch-cuda-manual-seed/13848
 
     seed = seed + rank
-    os.environ['PYTHONHASHSEED']=str(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -268,8 +279,12 @@ def main(args):
 
     init_ddp(config)
 
-    dataset, model, optimizer = load_train_objs()
+    dataset, model = load_train_objs()
+    
     train_data = prepare_dataloader(dataset, config.train.data)
+    
+    optimizer = prepare_optimizer(model, config.train.optimizer)
+    
     # We can also do a distributed evaluation by also using distributed sampler in the evaluation data
     # test_data = prepare_dataloader(test_dataset, config.train.data)
     trainer = Trainer(model, train_data, optimizer, config)
