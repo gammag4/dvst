@@ -74,6 +74,7 @@ class Trainer:
         self.amp_dtype = config.setup.amp.dtype
         self.grad_clipping_enabled = config.train.grad_clipping.enabled
         self.max_grad_norm = config.train.grad_clipping.max_norm
+        self.max_epochs = config.train.total_epochs
 
         self.model = model.to(self.local_rank)
         self.train_data = train_data
@@ -179,8 +180,8 @@ class Trainer:
             while self._run_batch(source, targets):
                 pass
 
-    def train(self, max_epochs: int):
-        for epoch in range(self.epochs_run, max_epochs):
+    def train(self):
+        for epoch in range(self.epochs_run, self.max_epochs):
             self._run_epoch(epoch)
             # Ensures only saves for first GPU to prevent redundancy
             if self.rank == 0 and epoch % self.save_every == 0:
@@ -288,7 +289,7 @@ def main(args):
     # We can also do a distributed evaluation by also using distributed sampler in the evaluation data
     # test_data = prepare_dataloader(test_dataset, config.train.data)
     trainer = Trainer(model, train_data, optimizer, config)
-    trainer.train(config.train.total_epochs)
+    trainer.train()
 
     dist.destroy_process_group()
 
