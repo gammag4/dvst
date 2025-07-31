@@ -1,7 +1,27 @@
 import importlib
+import math
 
 import torch
 from torchcodec.decoders import VideoDecoder
+
+
+def format_big_number(num):
+    if num < 1:
+        return f'{num}'
+
+    suffixes = ['', 'K', 'M', 'B', 'T']
+    i = min(len(suffixes) - 1, int(math.floor(math.log10(num) / 3)))
+    unit = suffixes[i]
+    num = num / (10 ** (3 * i))
+
+    return f"{num:.2f}{unit}"
+
+
+def print_num_params(model):
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    
+    print(f'Total params: {format_big_number(total_params)}; Trainable params: {format_big_number(trainable_params)}')
 
 
 def create_bound_function(self, func):
