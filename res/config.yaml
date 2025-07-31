@@ -11,7 +11,7 @@ setup:
     # Enables/disables AMP
     enabled: true
     # Sets AMP data type
-    dtype: torch.bfloat16
+    dtype: [(obj), torch.bfloat16]
     scaler:
       # Enables/disables grad scaling
       enabled: true
@@ -23,6 +23,15 @@ setup:
   # Seed for computations
   seed: 42
   ddp:
+    # Torchrun already sets local and global ranks as environment variables
+    # Number of process in the process group
+    world_size: [(env), WORLD_SIZE, 1]
+    # Number of processes locally
+    local_world_size: [(env), LOCAL_WORLD_SIZE, 1]
+    # Id of current process globally
+    rank: [(env), RANK, 0]
+    # Id of current process locally
+    local_rank: [(env), LOCAL_RANK, 0]
     # Timeout for ddp process group
     timeout: 1800
 
@@ -50,13 +59,13 @@ model:
     # Epsilon for QK-Norm computation
     eps: 1e-5
   # Operation used for attention, should be from xops.fmha
-  attn_op: xformers.ops.fmha.MemoryEfficientAttentionFlashAttentionOp
+  attn_op: [(obj), xformers.ops.fmha.MemoryEfficientAttentionFlashAttentionOp]
 
   # Number of embedding vectors used as latent space representation for images
   # TODO could compute this based on frame size and video size
   n_lat: 1024
   # The function that will be used to aggregate latents across frames. Should be one of the functions from src.model.latent_aggregators
-  latent_aggregator: src.model.latent_aggregators.residual_latent_aggregator
+  latent_aggregator: [(obj), src.model.latent_aggregators.residual_latent_aggregator]
   # frames_per_scene is the size of the batches that the videos will be broken into to create scenes
   #   TODO this was from the old idea of breaking scene into smaller batches of 3
   #   TODO test 3 ideas separate:

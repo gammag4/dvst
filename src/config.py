@@ -8,21 +8,30 @@ import torch
 from src.utils import import_object
 
 
-def process_config(config):
-    # Torchrun already sets local and global ranks as environment variables
-    config.setup.ddp.world_size = int(os.environ.get('WORLD_SIZE', 1))
-    config.setup.ddp.local_world_size = int(os.environ.get('LOCAL_WORLD_SIZE', 1))
-    config.setup.ddp.rank = int(os.environ.get('RANK', 0))
-    config.setup.ddp.local_rank = int(os.environ.get('LOCAL_RANK', 0))
+def parse_prefix(prefix, f, v):
+    return f(*v[1:]) if type(v) is list and v[0] == prefix else v
 
+
+def parse_config_item(v):
+    v = parse_prefix('(env)', os.environ.get, v)
+    v = parse_prefix('(obj)', import_object, v)
+
+    return v
+
+
+def parse_config(config):
+    if isinstance(config, dict):
+        return {k: parse_config(v) for k, v in config.items()}
+    elif isinstance(config, list):
+        return parse_config_item([parse_config(v) for v in config])
+    else:
+        return config
+
+
+def process_config(config):
     acc = torch.accelerator.current_accelerator()
     config.setup.device = torch.device(f'{acc}:{config.setup.ddp.local_rank}')
-    
-    config.setup.amp.dtype =import_object(config.setup.amp.dtype)
 
-    config.model.attn_op = import_object(config.model.attn_op)
-    config.model.latent_aggregator = import_object(config.model.latent_aggregator)
-    
     return config
 
 
@@ -33,6 +42,7 @@ def validate_config(config):
 def load_config(path):
     config = OmegaConf.load(path)
     config = OmegaConf.to_container(config, resolve=True)
+    config = parse_config(config)
     config = edict(config)
     
     config = process_config(config)
