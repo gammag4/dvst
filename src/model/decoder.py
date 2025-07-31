@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import einx
 
-from src.transformer import Encoder
+from .transformer import Encoder
 
 
 class DVSTDecoder(nn.Module):

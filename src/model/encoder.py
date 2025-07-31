@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from src.utils import create_bound_function
 
-from src.transformer import Encoder
+from .transformer import Encoder
 
 
 class DVSTEncoder(nn.Module):
