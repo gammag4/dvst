@@ -188,39 +188,6 @@ class Trainer:
                 self._save_checkpoint(epoch)
 
 
-def prepare_model(config):
-    return DVST(config=config)
-
-
-def prepare_optimizer(model, config):
-    # Removing parameters that are not optimized
-    params = [p for p in model.parameters() if not p.requires_grad]
-
-    return torch.optim.AdamW(
-        params,
-        lr=config.lr,
-        betas=config.betas,
-        fused=True # TODO Some places report issues so check if this gives errors or nans
-    )
-
-
-def prepare_dataloader(dataset: Dataset, config):
-    return DataLoader(
-        dataset,
-        batch_size=config.batch_size,
-        # Should be false bc using sampler
-        shuffle=False,
-        # Sampler that sends different batches to different gpus
-        sampler=DistributedSampler(dataset),
-        num_workers=config.num_workers,
-        prefetch_factor=config.prefetch_factor,
-        persistent_workers=False, # TODO check
-        pin_memory=True, # TODO check
-        drop_last=False, # TODO check
-        in_order=False # TODO check
-    )
-
-
 def enable_reproducibility(seed, rank):
     # TODO this wont work if restarted
 
@@ -258,6 +225,49 @@ def init_ddp(config):
     dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.setup.ddp.timeout))
 
 
+def prepare_dataloader(dataset: Dataset, config):
+    return DataLoader(
+        dataset,
+        batch_size=config.batch_size,
+        # Should be false bc using sampler
+        shuffle=False,
+        # Sampler that sends different batches to different gpus
+        sampler=DistributedSampler(dataset),
+        num_workers=config.num_workers,
+        prefetch_factor=config.prefetch_factor,
+        persistent_workers=False, # TODO check
+        pin_memory=True, # TODO check
+        drop_last=False, # TODO check
+        in_order=False # TODO check
+    )
+
+
+def prepare_optimizer(model, config):
+    # Removing parameters that are not optimized
+    params = [p for p in model.parameters() if not p.requires_grad]
+
+    return torch.optim.AdamW(
+        params,
+        lr=config.lr,
+        betas=config.betas,
+        fused=True # TODO Some places report issues so check if this gives errors or nans
+    )
+
+
+def train(config):
+    train_dataset = MyTrainDataset(2048)  # TODO load your dataset
+    train_data = prepare_dataloader(train_dataset, config.train.data)
+    
+    model = DVST(config=config.model)
+
+    optimizer = prepare_optimizer(model, config.train.optimizer)
+
+    # We can also do a distributed evaluation by also using distributed sampler in the evaluation data
+    # test_data = prepare_dataloader(test_dataset, config.train.data)
+    trainer = Trainer(model, train_data, optimizer, config)
+    trainer.train()
+
+
 def main(args):
     config = load_config(args.config_file)
 
@@ -279,17 +289,7 @@ def main(args):
 
     init_ddp(config)
 
-    train_dataset = MyTrainDataset(2048)  # TODO load your dataset
-    train_data = prepare_dataloader(train_dataset, config.train.data)
-    
-    model = prepare_model(config.model)
-
-    optimizer = prepare_optimizer(model, config.train.optimizer)
-    
-    # We can also do a distributed evaluation by also using distributed sampler in the evaluation data
-    # test_data = prepare_dataloader(test_dataset, config.train.data)
-    trainer = Trainer(model, train_data, optimizer, config)
-    trainer.train()
+    train(config)
 
     dist.destroy_process_group()
 
