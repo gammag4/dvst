@@ -34,10 +34,10 @@ class DVSTEncoder(nn.Module):
     def forward(self, scene):
         #TODO ADD RESIDUAL BLOCKS IN BETWEEN
         # For each frame time, gets all frames from all cams in that time, passes them through the transformer and then goes to the next frame time
+
         current_embeds = self.start_latent_embeds
-        n_frames = scene['shape'][-4]
-        for i in range(n_frames):
-            for s in scene:
+        for i in range(scene.n_frames):
+            for s in scene.videos:
                 Kinv, R, t, time, video = [s[i] for i in ('Kinv', 'R', 't', 'time', 'video')]
                 I = video[i]
                 

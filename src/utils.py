@@ -1,6 +1,8 @@
 import importlib
 import math
 
+from easydict import EasyDict as edict
+
 import torch
 from torchcodec.decoders import VideoDecoder
 
@@ -49,7 +51,7 @@ def colmap_poses_to_intrinsics_extrinsics(data):
 
 
 def preprocess_scene_video(video_path, K, R, t, fps):
-    # Preprocesses data for a scene video and returns the result. Should be used in dataset.__getitem__()
+    # Preprocesses data for a scene video and returns the result
     # R and t may be either just one matrix for the entire thing (static cameras) or a batch of matrices, one for each frame (moving cameras)
     # TODO do matrix computations from here precached and store in database, especially the ones for moving cameras, which have per-frame matrices
     # TODO add an UV option too (to convert to uv) (also actually add it precached too)
@@ -66,12 +68,24 @@ def preprocess_scene_video(video_path, K, R, t, fps):
     # Frame times
     time = torch.arange(shape[-4]) / fps
     
-    return {
-        'video': video,
-        'K': K,
-        'Kinv': K.inverse(),
-        'R': R.squeeze().reshape((-1, 3, 3)),
-        't': t.squeeze().reshape((-1, 3)),
-        'time': time,
-        'shape': shape
-    }
+    return edict(
+        video=video,
+        K=K,
+        Kinv=K.inverse(),
+        R=R.squeeze().reshape((-1, 3, 3)),
+        t=t.squeeze().reshape((-1, 3)),
+        time=time,
+        shape=shape
+    )
+
+
+def preprocess_scene_videos(video_tuples):
+    # Processes data from multiple scene video tuples, which should be in the format of the args given to preprocess_scene_video
+    # Should be used in dataset.__getitem__()
+    videos = [preprocess_scene_video(*v) for v in video_tuples]
+    n_frames = min((v['shape'][-4] for v in videos))
+
+    return edict(
+        videos=videos,
+        n_frames=n_frames
+    )

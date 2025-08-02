@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import Dataset
 from torchcodec.decoders import VideoDecoder
 
-from src.utils import preprocess_scene_video, colmap_poses_to_intrinsics_extrinsics
+from src.utils import preprocess_scene_videos, colmap_poses_to_intrinsics_extrinsics
 
 
 # Download dataset from https://github.com/facebookresearch/Neural_3D_Video/releases
@@ -45,5 +45,4 @@ class PlenopticDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, i):
-        d = self.data[i]
-        return [preprocess_scene_video(*v) for v in d]
+        return preprocess_scene_videos(self.data[i])
