@@ -28,16 +28,16 @@ class PanopticDataset(Dataset):
             
             cameras = {c['name']: c for c in cameras}
             cameras = [cameras[c] for c in vid_names]
-            cameras = [[
+            videos = [[
                 os.path.join(vids_path, self.get_video_name(c['name'])),
                 c['K'],
                 c['R'],
                 c['t'],
                 self.fps[c['type']],
-                c['distCoef'] #TODO currently distortion is being ignored
+                # c['distCoef'] #TODO currently distortion is being ignored
                 ] for c in cameras]
         
-            scenes.append(cameras)
+            scenes.append(videos)
 
         self.data = scenes
             
@@ -49,4 +49,4 @@ class PanopticDataset(Dataset):
 
     def __getitem__(self, i):
         d = self.data[i]
-        return [preprocess_scene_video(*v[:-1]) for v in d]
+        return [preprocess_scene_video(*v) for v in d]
