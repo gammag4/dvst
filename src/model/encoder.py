@@ -32,7 +32,6 @@ class DVSTEncoder(nn.Module):
         )
         
     def forward(self, scene):
-        #TODO ADD RESIDUAL BLOCKS IN BETWEEN
         # For each frame time, gets all frames from all cams in that time, passes them through the transformer and then goes to the next frame time
 
         current_embeds = self.start_latent_embeds
