@@ -82,16 +82,17 @@ class PoseEncoder(nn.Module):
     def _compute_view_rays(self, Kinv, R, t, pad, hw):
         # The forward function was split into two to display the view rays layer
         
+        device = Kinv.device
         pad_s = pad[-2::-2]
 
         # Creates vectors for each pixel in screen
         # No need to unflip y axis since it being flipped does not affect the topological structure of the representation TODO is it true?
-        ranges = [torch.arange(l, dtype=torch.float32) - o + 0.5 for o, l in zip(pad_s, hw)]
+        ranges = [torch.arange(l, dtype=torch.float32, device=device) - o + 0.5 for o, l in zip(pad_s, hw)]
         # In the original LVSM impl, the K^{-1} multiplication is done here bc its faster, maybe change the code to do that too (https://github.com/Haian-Jin/LVSM/blob/ebeff4989a3e1ec38fcd51ae24919d0eadf38c8f/utils/data_utils.py#L71-L73)
         # Used torch.ones since it seems to be used by most of the vision models similar to this (e.g. lvsm, see https://github.com/Haian-Jin/LVSM/blob/ebeff4989a3e1ec38fcd51ae24919d0eadf38c8f/utils/data_utils.py#L73)
         # The torch.ones is used bc the convention is that the theoretical sensor plane has focal length 1 (it maps to coordinates (u, v, 1), which would be equivalent to (f u, f v, f) = f(u, v, 1))
         vecs = torch.meshgrid(*ranges, indexing='ij')
-        vecs = torch.concat([torch.stack([*vecs[::-1]]), torch.ones((1, *vecs[0].shape))], dim=-3)
+        vecs = torch.concat([torch.stack([*vecs[::-1]]), torch.ones((1, *vecs[0].shape), device=device)], dim=-3)
 
         o, d = compute_view_rays(vecs, Kinv, R, t) # o, d: (B, 3, H, W)
         return o, d
