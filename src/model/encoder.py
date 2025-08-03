@@ -14,6 +14,7 @@ class DVSTEncoder(nn.Module):
         self.config = config
         self.n_lat = self.config.n_lat
         self.d_model = self.config.d_model
+        self.use_incremental_aggregator = self.config.use_incremental_aggregator
         
         self.start_latent_embeds = nn.Parameter(torch.zeros((self.n_lat, self.d_model)))
         self.pose_encoder = pose_encoder
@@ -32,15 +33,25 @@ class DVSTEncoder(nn.Module):
         )
         
     def forward(self, scene):
+        # Computes all frame embeddings and aggregates them at once
+        if not self.use_incremental_aggregator:
+            scene_embeds = []
+            for s in scene.videos:
+                Kinv, R, t, time, I = [s[i][:scene.n_frames] for i in ('Kinv', 'R', 't', 'time', 'video')]
+                
+                video_embeds, _ = self.pose_encoder(Kinv, R, t, time, I) # Computes embeddings for entire video
+                scene_embeds.append(video_embeds)
+            embeds = self.latent_aggregator(self.start_latent_embeds, scene_embeds) # Aggregates embeddings for entire scene
+                    
+            return embeds
+            
         # For each frame time, gets all frames from all cams in that time, passes them through the transformer and then goes to the next frame time
-
         current_embeds = self.start_latent_embeds
         for i in range(scene.n_frames):
             for s in scene.videos:
-                Kinv, R, t, time, video = [s[i] for i in ('Kinv', 'R', 't', 'time', 'video')]
-                I = video[i]
+                Kinv, R, t, time, I = [s[i:i+1] for i in ('Kinv', 'R', 't', 'time', 'video')]
                 
                 frame_embeds, _ = self.pose_encoder(Kinv, R, t, time, I) # Computes frame embeddings
-                current_embeds = self.latent_aggregator(frame_embeds, current_embeds)
+                current_embeds = self.latent_aggregator(frame_embeds, current_embeds) # Aggregats with previous embeddings
                 
         return current_embeds

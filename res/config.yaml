@@ -65,7 +65,8 @@ model:
   # TODO could compute this based on frame size and video size
   n_lat: 1024
   # The function that will be used to aggregate latents across frames. Should be one of the functions from src.model.latent_aggregators
-  latent_aggregator: [(obj), src.model.latent_aggregators.residual_latent_aggregator]
+  latent_aggregator: [(obj), src.model.latent_aggregators.residual_latent_aggregator_incremental]
+  use_incremental_aggregator: true
   # frames_per_scene is the size of the batches that the videos will be broken into to create scenes
   #   TODO this was from the old idea of breaking scene into smaller batches of 3
   #   TODO test 3 ideas separate:
