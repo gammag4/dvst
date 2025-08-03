@@ -34,7 +34,10 @@ class DVSTDecoder(nn.Module):
         )
 
     # For now, generating only a single image at a time is supported, so, in all tensors, B=1
-    def forward(self, latent_embeds, Kinv, R, t, time, hw):
+    def forward(self, latent_embeds, frame_query):
+        Kinv, R, t, time, shape = [frame_query[i] for i in ['Kinv', 'R', 't', 'time', 'shape']]
+        hw = shape[-2:]
+        
         embeds, pad = self.pose_encoder(Kinv, R, t, time, None, hw) # Computes query embeddings
         embeds = torch.concat([latent_embeds, embeds], dim=-2) # Concats embeddings with latent embeddings
         embeds = self.transformer(embeds) # Creates image embeddings using transformer

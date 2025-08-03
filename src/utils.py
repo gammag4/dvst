@@ -33,9 +33,24 @@ def create_bound_function(self, func):
 
 
 def import_object(full_name):
+    # Use [(obj), 'path.to.Object'] to return object
     s = full_name.split('.')
     path, name = '.'.join(s[:-1]), s[-1]
     return importlib.import_module(path).__dict__[name]
+
+
+def import_and_run_object(full_name, *args):
+    obj = import_object(full_name)
+
+    # Use [(obj), 'path.to.Object', null] to run without arguments
+    if len(args) == 1 and args[0] is None:
+        return obj()
+    # Use [(obj), 'path.to.Object', arg1, arg2, ...] to run with arguments
+    elif len(args) >= 1:
+        return obj(*args)
+    # Use [(obj), 'path.to.Object'] to return without running
+    else:
+        return obj
 
 
 def colmap_poses_to_intrinsics_extrinsics(data):

@@ -5,7 +5,7 @@ from easydict import EasyDict as edict
 
 import torch
 
-from src.utils import import_object
+from src.utils import import_and_run_object
 
 
 def parse_prefix(prefix, f, v):
@@ -14,7 +14,7 @@ def parse_prefix(prefix, f, v):
 
 def parse_config_item(v):
     v = parse_prefix('(env)', os.environ.get, v)
-    v = parse_prefix('(obj)', import_object, v)
+    v = parse_prefix('(obj)', import_and_run_object, v)
 
     return v
 

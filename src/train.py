@@ -14,8 +14,8 @@ import torch.distributed as dist
 import torch.amp as amp
 
 from src.config import load_config
+from src.datasets.full_dataset import FullDataset
 from src.model import DVST
-from datautils import MyTrainDataset
 
 
 class GradScaler(amp.GradScaler):
@@ -76,7 +76,7 @@ class Trainer:
         self.max_grad_norm = config.train.grad_clipping.max_norm
         self.max_epochs = config.train.total_epochs
 
-        self.model = model.to(self.local_rank)
+        self.model = model.to(self.device)
         self.train_data = train_data
         self.optimizer = optimizer
 
@@ -129,15 +129,15 @@ class Trainer:
     def _should_replay_batch(self):
         return self.scaler.should_replay_batch()
 
-    def _run_batch(self, source, targets):
+    def _run_batch(self, item):
         self.optimizer.zero_grad(set_to_none=True)
 
         # AMP: Casts operations to mixed precision
         with amp.autocast(device_type=self.device, dtype=self.amp_dtype, enabled=self.amp_enabled):
             # output.dtype is bfloat16 because linear layers autocast to bfloat16
-            output = self.model(source)
+            output = self.model(item)
             # loss.dtype is float32 because mse_loss layers autocast to float32
-            loss = F.cross_entropy(output, targets)
+            loss = F.cross_entropy(output, item.targets)
 
         # Exits autocast before backward()
         # Backward passes under autocast are not recommended
@@ -172,12 +172,12 @@ class Trainer:
         # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
         # See: https://docs.pytorch.org/docs/stable/data.html
         self.train_data.sampler.set_epoch(epoch)
-        for source, targets in self.train_data:
-            source = source.to(self.local_rank)
-            targets = targets.to(self.local_rank)
+        self.train_data.dataset.to(self.device) # TODO bruh check if this breaks
+        for item in self.train_data:
+            # item = item.to(self.device)
             
             # Batch replaying
-            while self._run_batch(source, targets):
+            while self._run_batch(item):
                 pass
 
     def train(self):
@@ -255,9 +255,9 @@ def prepare_optimizer(model, config):
 
 
 def train(config):
-    train_dataset = MyTrainDataset(2048)  # TODO load your dataset
-    train_data = prepare_dataloader(train_dataset, config.train.data)
-    
+    train_dataset = FullDataset(config.train.data.datasets)
+    train_data = prepare_dataloader(train_dataset, config.train.data.dataloader)
+
     model = DVST(config=config.model)
 
     optimizer = prepare_optimizer(model, config.train.optimizer)

@@ -8,18 +8,17 @@ from torchcodec.decoders import VideoDecoder
 from src.utils import preprocess_scene_videos
 
 
-#TODO create test dataset
-class PanopticDataset(Dataset):
+class RawPanopticDataset(Dataset):
     # if is_processed, uses videos with name hd_**_**_r.mp4 instead of hd_**_**.mp4
-    def __init__(self, path, is_processed=True, device=None):
+    def __init__(self, path, is_processed=True):
         self.path = path
         self.is_processed = is_processed
         self.fps = {'hd': 29.97, 'vga': 25.0, 'kinect-color': 30}
-        self.device = device
+        self.device = None
 
         scenes = []
-        for sname in os.listdir(path):
-            spath = os.path.join(path, sname)
+        for sname in os.listdir(self.path):
+            spath = os.path.join(self.path, sname)
             cal_path = os.path.join(spath, f'calibration_{sname}.json')
             vids_path = os.path.join(spath, 'hdVideos')
             vid_names = list(map(lambda vid: '_'.join(vid.split('_')[1:3]), os.listdir(vids_path)))
@@ -30,7 +29,7 @@ class PanopticDataset(Dataset):
             cameras = {c['name']: c for c in cameras}
             cameras = [cameras[c] for c in vid_names]
             videos = [[
-                os.path.join(vids_path, self.get_video_name(c['name'])),
+                os.path.join(vids_path, self._get_video_name(c['name'])),
                 c['K'],
                 c['R'],
                 c['t'],
@@ -41,8 +40,12 @@ class PanopticDataset(Dataset):
             scenes.append(videos)
 
         self.data = scenes
-            
-    def get_video_name(self, vid_id):
+        
+    def to(self, device):
+        self.device = device
+        return self
+
+    def _get_video_name(self, vid_id):
         return f'hd_{vid_id}_r.mp4' if self.is_processed else f'hd_{vid_id}.mp4'
 
     def __len__(self):

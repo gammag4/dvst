@@ -13,13 +13,14 @@ from src.utils import preprocess_scene_videos, colmap_poses_to_intrinsics_extrin
 # unzip all in a folder and use it as root for the dataset
 
 
-class PlenopticDataset(Dataset):
-    def __init__(self, path, is_test=False, device=None):
+class RawPlenopticDataset(Dataset):
+    def __init__(self, path, include_test=False):
         self.path = path
         self.fps = 30
-        self.is_test = is_test
-        scene_names = list(filter(lambda p: os.path.isdir(os.path.join(path, p)), os.listdir(path)))
-        self.device = device
+        self.include_test = include_test
+        self.device = None
+
+        scene_names = list(filter(lambda p: os.path.isdir(os.path.join(self.path, p)), os.listdir(self.path)))
 
         scenes = []
         for sname in scene_names:
@@ -32,18 +33,23 @@ class PlenopticDataset(Dataset):
             R, t = T[:, :, :3], T[:, :, 3:]
             K, R, t = [list(i) for i in [K, R, t]]
             
-            fps = [self.fps] * len(vids)
+            fpss = [self.fps] * len(vids)
 
-            res = list(zip(vids, K, R, t, fps))
-            # First video is the test one
-            res = res[:1] if self.is_test else res[1:]
-
+            res = list(zip(vids, K, R, t, fpss))
             scenes.append(res)
 
         self.data = scenes
+        
+    def to(self, device):
+        self.device = device
+        return self
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, i):
-        return preprocess_scene_videos(self.data[i], self.device)
+        scene = self.data[i]
+        # First video is the test one
+        scene = scene if self.include_test else scene[1:]
+        
+        return preprocess_scene_videos(scene, self.device)
