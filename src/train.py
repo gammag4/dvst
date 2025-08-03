@@ -229,10 +229,10 @@ def prepare_dataloader(dataset: Dataset, config):
     return DataLoader(
         dataset,
         batch_size=config.batch_size,
-        # Should be false bc using sampler
+        # Shuffle should be defined in sampler when using DistributedSampler
         shuffle=False,
         # Sampler that sends different batches to different gpus
-        sampler=DistributedSampler(dataset),
+        sampler=DistributedSampler(dataset, shuffle=config.shuffle),
         num_workers=config.num_workers,
         prefetch_factor=config.prefetch_factor,
         persistent_workers=False, # TODO check

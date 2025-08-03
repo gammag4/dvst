@@ -90,6 +90,7 @@ train:
     batch_size: 32
     num_workers: 4 # TODO 4 per gpu, needs to be checked (source: https://discuss.pytorch.org/t/guidelines-for-assigning-num-workers-to-dataloader/813/5)
     prefetch_factor: 4
+    shuffle: true
 
   total_epochs: 50
   save_every: 10
