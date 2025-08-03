@@ -16,7 +16,8 @@ class DVSTEncoder(nn.Module):
         self.d_model = self.config.d_model
         self.use_incremental_aggregator = self.config.use_incremental_aggregator
         
-        self.start_latent_embeds = nn.Parameter(torch.zeros((self.n_lat, self.d_model)))
+        # TODO move embeds to model and use as input in forward (similar to decoder)
+        self.start_latent_embeds = nn.Parameter(torch.zeros((1, self.n_lat, self.d_model)))
         self.pose_encoder = pose_encoder
         self.latent_aggregator = create_bound_function(self, self.config.latent_aggregator)
         
@@ -32,12 +33,16 @@ class DVSTEncoder(nn.Module):
             self.config.attn_op
         )
         
-    def forward(self, scene):
+    def forward(self, videos, n_frames):
         # Computes all frame embeddings and aggregates them at once
         if not self.use_incremental_aggregator:
             scene_embeds = []
-            for s in scene.videos:
-                Kinv, R, t, time, I = [s[i][:scene.n_frames] for i in ('Kinv', 'R', 't', 'time', 'video')]
+            for v in videos:
+                Kinv = v.Kinv
+                R = v.R if v.R.shape[0] == 1 else v.R[:n_frames]
+                t = v.t if v.t.shape[0] == 1 else v.t[:n_frames]
+                time = v.time[:n_frames]
+                I = v.video[:n_frames]
                 
                 video_embeds, _ = self.pose_encoder(Kinv, R, t, time, I) # Computes embeddings for entire video
                 scene_embeds.append(video_embeds)
@@ -47,9 +52,13 @@ class DVSTEncoder(nn.Module):
             
         # For each frame time, gets all frames from all cams in that time, passes them through the transformer and then goes to the next frame time
         current_embeds = self.start_latent_embeds
-        for i in range(scene.n_frames):
-            for s in scene.videos:
-                Kinv, R, t, time, I = [s[i:i+1] for i in ('Kinv', 'R', 't', 'time', 'video')]
+        for i in range(n_frames):
+            for v in videos:
+                Kinv = v.Kinv
+                R = v.R if v.R.shape[0] == 1 else v.R[i:i+1]
+                t = v.t if v.t.shape[0] == 1 else v.t[i:i+1]
+                time = v.time[i:i+1]
+                I = v.video[i:i+1]
                 
                 frame_embeds, _ = self.pose_encoder(Kinv, R, t, time, I) # Computes frame embeddings
                 current_embeds = self.latent_aggregator(frame_embeds, current_embeds) # Aggregats with previous embeddings

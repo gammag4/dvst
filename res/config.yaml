@@ -63,7 +63,7 @@ model:
 
   # Number of embedding vectors used as latent space representation for images
   # TODO could compute this based on frame size and video size
-  n_lat: 1024
+  n_lat: 256
   # The function that will be used to aggregate latents across frames. Should be one of the functions from src.model.latent_aggregators
   latent_aggregator: [(obj), src.model.latent_aggregators.residual_latent_aggregator_incremental]
   use_incremental_aggregator: true

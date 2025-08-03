@@ -38,7 +38,7 @@ class RawDatasetWrapper(Dataset):
             random.shuffle(sources)
             random.shuffle(targets)
         
-        targets, queries = [v.pop('video') for v in targets], targets
+        targets, queries = [v.video for v in targets], targets
 
         # Sources is the list of source videos that will be used to create latent representation of scene
         # Queries is the list of each frame query (pose + time frame) to be retrieved

@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import einx
@@ -34,16 +36,19 @@ class DVSTDecoder(nn.Module):
         )
 
     # For now, generating only a single image at a time is supported, so, in all tensors, B=1
-    def forward(self, latent_embeds, frame_query):
-        Kinv, R, t, time, shape = [frame_query[i] for i in ['Kinv', 'R', 't', 'time', 'shape']]
-        hw = shape[-2:]
+    def forward(self, latent_embeds, Kinv, R, t, time, hw):
+        # Kinv = frame_query.Kinv
+        # R = frame_query.R if frame_query.R.shape[0] == 1 else frame_query.R[i:i+1]
+        # t = frame_query.t if frame_query.t.shape[0] == 1 else frame_query.t[i:i+1]
+        # time = frame_query.time[i:i+1]
+        # hw = frame_query.shape[-2:]
         
         embeds, pad = self.pose_encoder(Kinv, R, t, time, None, hw) # Computes query embeddings
         embeds = torch.concat([latent_embeds, embeds], dim=-2) # Concats embeddings with latent embeddings
         embeds = self.transformer(embeds) # Creates image embeddings using transformer
-        embeds = embeds[latent_embeds.shape[-2]:] # Discards embeddings mapped from latent embeddings
+        embeds = embeds[..., latent_embeds.shape[-2]:, :] # Discards embeddings mapped from latent embeddings
         embeds = self.embeds_to_patch_embeds(embeds) # Maps embeddings to patch embeddings
-        I_padded = einx.rearrange('... (h w) (c p1 p2) -> ... c (h p1) (w p2)', embeds, c=self.C, p1=self.p, p2=self.p) # Maps patch embeddings back to image
+        I_padded = einx.rearrange('... (h w) (c p1 p2) -> ... c (h p1) (w p2)', embeds, h=math.isqrt(embeds.shape[-2]), c=self.C, p1=self.p, p2=self.p) # Maps patch embeddings back to image
         I = I_padded[pad[2]:I_padded.shape[-2]-pad[3], pad[0]:I_padded.shape[-1]-pad[1]]
         
         return I
