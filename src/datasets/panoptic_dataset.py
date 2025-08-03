@@ -11,10 +11,11 @@ from src.utils import preprocess_scene_videos
 #TODO create test dataset
 class PanopticDataset(Dataset):
     # if is_processed, uses videos with name hd_**_**_r.mp4 instead of hd_**_**.mp4
-    def __init__(self, path, is_processed=True):
+    def __init__(self, path, is_processed=True, device=None):
         self.path = path
         self.is_processed = is_processed
         self.fps = {'hd': 29.97, 'vga': 25.0, 'kinect-color': 30}
+        self.device = device
 
         scenes = []
         for sname in os.listdir(path):
@@ -48,4 +49,4 @@ class PanopticDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, i):
-        return preprocess_scene_videos(self.data[i])
+        return preprocess_scene_videos(self.data[i], self.device)

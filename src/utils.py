@@ -50,14 +50,15 @@ def colmap_poses_to_intrinsics_extrinsics(data):
     return K, T, (h, w)
 
 
-def preprocess_scene_video(video_path, K, R, t, fps):
+def preprocess_scene_video(video_path, K, R, t, fps, device):
     # Preprocesses data for a scene video and returns the result
     # R and t may be either just one matrix for the entire thing (static cameras) or a batch of matrices, one for each frame (moving cameras)
     # TODO do matrix computations from here precached and store in database, especially the ones for moving cameras, which have per-frame matrices
     # TODO add an UV option too (to convert to uv) (also actually add it precached too)
-    K, R, t = [i if isinstance(i, torch.Tensor) else torch.tensor(i) for i in (K, R, t)]
-    video = VideoDecoder(video_path)
-    shape = [len(video), *video[0].shape]
+
+    K, R, t = [i.to(device) if isinstance(i, torch.Tensor) else torch.tensor(i, device=device) for i in (K, R, t)]
+    video = VideoDecoder(video_path, device=device)
+    shape = torch.Size([len(video), *video[0].shape])
 
     # Takes into account resized images
     h_real, w_real = shape[-2:]
@@ -66,7 +67,7 @@ def preprocess_scene_video(video_path, K, R, t, fps):
     K[0, 0], K[1, 1] = K[0, 0] * (w_real / w), K[1, 1] * (h_real / h) # c_x, c_y
     
     # Frame times
-    time = torch.arange(shape[-4]) / fps
+    time = torch.arange(shape[-4], device=device) / fps
     
     return edict(
         video=video,
@@ -79,11 +80,11 @@ def preprocess_scene_video(video_path, K, R, t, fps):
     )
 
 
-def preprocess_scene_videos(video_tuples):
+def preprocess_scene_videos(video_tuples, device):
     # Processes data from multiple scene video tuples, which should be in the format of the args given to preprocess_scene_video
     # Should be used in dataset.__getitem__()
-    videos = [preprocess_scene_video(*v) for v in video_tuples]
-    n_frames = min((v['shape'][-4] for v in videos))
+    videos = [preprocess_scene_video(*v, device) for v in video_tuples]
+    n_frames = min((v.shape[-4] for v in videos))
 
     return edict(
         videos=videos,

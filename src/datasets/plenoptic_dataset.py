@@ -14,12 +14,13 @@ from src.utils import preprocess_scene_videos, colmap_poses_to_intrinsics_extrin
 
 
 class PlenopticDataset(Dataset):
-    def __init__(self, path, is_test=False):
+    def __init__(self, path, is_test=False, device=None):
         self.path = path
         self.fps = 30
         self.is_test = is_test
         scene_names = list(filter(lambda p: os.path.isdir(os.path.join(path, p)), os.listdir(path)))
-        
+        self.device = device
+
         scenes = []
         for sname in scene_names:
             spath = os.path.join(self.path, sname)
@@ -45,4 +46,4 @@ class PlenopticDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, i):
-        return preprocess_scene_videos(self.data[i])
+        return preprocess_scene_videos(self.data[i], self.device)
