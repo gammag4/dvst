@@ -105,3 +105,26 @@ def preprocess_scene_videos(video_tuples, device):
         videos=videos,
         n_frames=n_frames
     )
+
+
+def get_video_slice(v, start, end):
+    if type(v) in [VideoDecoder, torch.Tensor]:
+        return v[start:end] / 255.0
+
+    res = edict(
+        K=v.K,
+        Kinv=v.Kinv,
+        R=v.R if v.R.shape[0] == 1 else v.R[start:end],
+        t=v.t if v.t.shape[0] == 1 else v.t[start:end],
+        time=v.time[start:end],
+        shape=torch.Size([end - start, *v.shape[1:]])
+    )
+    
+    if v.get('video', None) is not None:
+        res.video = v.video[start:end] / 255.0
+    
+    return res
+
+
+def get_videos_slice(videos, start, end):
+    return [get_video_slice(v, start, end) for v in videos]

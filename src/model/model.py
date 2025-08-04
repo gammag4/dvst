@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from easydict import EasyDict as edict
+
+from src.utils import get_videos_slice
 
 from .pose_encoder import PoseEncoder
 from .encoder import DVSTEncoder
@@ -16,37 +19,41 @@ class DVST(nn.Module):
         super().__init__()
         
         self.config = config
+        self.scene_batch_size = self.config.scene_batch_size
         
+        self.start_latent_embeds = nn.Parameter(torch.zeros((1, self.config.n_lat, self.config.d_model)))
         self.pose_encoder = PoseEncoder(self.config)
         self.encoder = DVSTEncoder(self.config, self.pose_encoder)
         self.decoder = DVSTDecoder(self.config, self.pose_encoder)
         
-    def create_scene_latents(self, videos, n_frames):
-        return self.encoder(videos, n_frames)
-    
-    def get_frame(self, latent_embeds, Kinv, R, t, time, hw):
-        return self.decoder(latent_embeds, Kinv, R, t, time, hw)
-    
-    def get_frames(self, latent_embeds, queries, n_frames):
-        videos = []
-        for v in queries:
-            video = []
-            for i in range(n_frames):
-                Kinv = v.Kinv
-                R = v.R if v.R.shape[0] == 1 else v.R[i:i+1]
-                t = v.t if v.t.shape[0] == 1 else v.t[i:i+1]
-                time = v.time[i:i+1]
-                hw = v.shape[-2:]
+        # TODO
+        self.loss_fn = F.mse_loss
 
-                # TODO don't store all frames, compute grads after processing each frame to save memory (or batch of frames)
-                video.append(self.get_frame(latent_embeds, Kinv, R, t, time, hw))
-                
-            videos.append(torch.concat(video))
+    def create_scene_latents(self, videos, n_frames):
+        latent_embeds = self.start_latent_embeds
         
-        return videos
-        
+        for i in range(0, n_frames):
+            curr_videos = get_videos_slice(videos, i, i + 1)
+            latent_embeds = self.encoder(latent_embeds, curr_videos)
+            
+        return latent_embeds
+
+    def generate_frames(self, latent_embeds, video_query):
+        return self.decoder(latent_embeds, video_query)
+    
     # We assume videos are not big enough so that they need to be loaded in batches into memory #TODO load in batches if size exceed n_frames (create new scene for each batch of n_frames)
-    def forward(self, scene):
-        latent_embeds = self.create_scene_latents(scene.sources, scene.n_frames)
-        I = self.get_frames(latent_embeds, scene.queries, scene.n_frames)
-        return I
+    def forward(self, videos, queries, targets, start, end, latent_embeds):
+        loss = 0.
+        
+        curr_videos = get_videos_slice(videos, start, end)
+        curr_queries = get_videos_slice(queries, start, end)
+        curr_targets = get_videos_slice(targets, start, end)
+        
+        latent_embeds = self.encoder(latent_embeds, curr_videos)
+        
+        for query, target in zip(curr_queries, curr_targets):
+            frames = self.generate_frames(latent_embeds, query)
+            l = self.loss_fn(frames, target) / frames[0].numel()
+            loss = loss + l
+        
+        return loss, latent_embeds

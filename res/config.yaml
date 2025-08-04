@@ -41,6 +41,7 @@ model:
   # Number of color channels in each frame
   C: 3
   # Number of octaves for representing each of the 6 components from plucker rays and the time component
+  # TODO change code to not use octaves/duplicate coordinates if n_oct = 1
   n_oct: 6
 
   # Number of layers in transformer encoder
@@ -65,8 +66,12 @@ model:
   # TODO could compute this based on frame size and video size
   n_lat: 256
   # The function that will be used to aggregate latents across frames. Should be one of the functions from src.model.latent_aggregators
-  latent_aggregator: [(obj), src.model.latent_aggregators.residual_latent_aggregator_incremental]
-  use_incremental_aggregator: true
+  latent_aggregator: [(obj), src.model.latent_aggregators.residual_latent_aggregator]
+  # TODO How many frames to break scenes into (use if using input scenes that are too big)
+  # When using this, after the specified number of frames, the latent_embedding has its grad graph removed and becomes a leaf tensor
+  #   Its gradients are not propagated back to the start_latent_embeds parameter, but this saves memory
+  scene_batch_size: 3
+
   # frames_per_scene is the size of the batches that the videos will be broken into to create scenes
   #   TODO this was from the old idea of breaking scene into smaller batches of 3
   #   TODO test 3 ideas separate:

@@ -16,6 +16,7 @@ import torch.amp as amp
 from src.config import load_config
 from src.datasets.full_dataset import FullDataset
 from src.model import DVST
+from src.utils import create_bound_function
 
 
 class GradScaler(amp.GradScaler):
@@ -64,6 +65,7 @@ class Trainer:
         model: torch.nn.Module,
         train_data: DataLoader,
         optimizer: torch.optim.Optimizer,
+        run_batch,
         config
     ) -> None:
         self.device = config.setup.device
@@ -79,6 +81,7 @@ class Trainer:
         self.model = model.to(self.device)
         self.train_data = train_data
         self.optimizer = optimizer
+        self._run_batch = create_bound_function(self, run_batch)
 
         # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing checkpoint
         # Starts from checkpoint if exists
@@ -93,7 +96,7 @@ class Trainer:
         # these should be sent to the proper devices by either the application or by model.forward()
         self.model = DDP(self.model, device_ids=[self.local_rank])
         
-        # Gradient scaler for AMP
+        # Gradient scaler for AMP (probably not needed if using bfloat16)
         self.scaler = GradScaler(
             device=self.device,
             enabled=self.amp_enabled and config.setup.amp.scaler.enabled,
@@ -129,15 +132,15 @@ class Trainer:
     def _should_replay_batch(self):
         return self.scaler.should_replay_batch()
 
-    def _run_batch(self, item):
+    # Use this function to run a batch for a generic model
+    def _run_batch(self, loss_constructor):
         self.optimizer.zero_grad(set_to_none=True)
 
         # AMP: Casts operations to mixed precision
         with amp.autocast(device_type=self.device, dtype=self.amp_dtype, enabled=self.amp_enabled):
             # output.dtype is bfloat16 because linear layers autocast to bfloat16
-            output = self.model(item)
             # loss.dtype is float32 because mse_loss layers autocast to float32
-            loss = F.cross_entropy(output, item.targets)
+            loss = loss_constructor()
 
         # Exits autocast before backward()
         # Backward passes under autocast are not recommended
@@ -145,7 +148,7 @@ class Trainer:
 
         # Scales the loss, and calls backward()
         # to create scaled gradients
-        self.scaler.scale(loss).backward()
+        self.scaler.scale(loss).backward() # Already called in model
         
         # All gradients are scaled in this region up to scaler.step(optimizer), so they need to be unscaled to be used
         # Unscales the gradients of optimizer's assigned params in-place
@@ -173,12 +176,29 @@ class Trainer:
         # See: https://docs.pytorch.org/docs/stable/data.html
         self.train_data.sampler.set_epoch(epoch)
         self.train_data.dataset.to(self.device) # TODO bruh check if this breaks
-        for item in self.train_data:
-            # item = item.to(self.device)
+        for scene in self.train_data:
+            videos, queries, targets, n_frames = scene.sources, scene.queries, scene.targets, scene.n_frames
+            self.current_latent_embeds = self.model.start_latent_embeds
             
-            # Batch replaying
-            while self._run_batch(item):
-                pass
+            for i in range(0, n_frames, self.model.scene_batch_size):
+                start, end = i, min(n_frames, i + self.model.scene_batch_size)
+                
+                # TODO fix this abomination put in model
+                if i != 0:
+                    def run_batch1():
+                        loss, self.current_latent_embeds = self.model.forward(videos, queries, targets, start, end, self.current_latent_embeds)
+                        self.current_latent_embeds = self.current_latent_embeds.detach()
+                        return loss
+                    # Batch replaying
+                    while self._run_batch(run_batch1):
+                        pass
+                
+                def run_batch2():
+                    loss, _ = self.model.forward(videos, queries, targets, start, end, self.model.start_latent_embeds)
+                    return loss
+                # Batch replaying
+                while self._run_batch(run_batch2):
+                    pass
 
     def train(self):
         for epoch in range(self.epochs_run, self.max_epochs):
