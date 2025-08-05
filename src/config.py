@@ -8,12 +8,23 @@ import torch
 from src.utils import import_and_run_object
 
 
+def parse_env(var, default):
+    res = os.environ.get(var, default)
+    try:
+        res = float(res)
+        res = int(res)
+    except ValueError:
+        pass
+    
+    return res
+
+
 def parse_prefix(prefix, f, v):
     return f(*v[1:]) if type(v) is list and v[0] == prefix else v
 
 
 def parse_config_item(v):
-    v = parse_prefix('(env)', os.environ.get, v)
+    v = parse_prefix('(env)', parse_env, v)
     v = parse_prefix('(obj)', import_and_run_object, v)
 
     return v
@@ -30,7 +41,7 @@ def parse_config(config):
 
 def process_config(config):
     acc = torch.accelerator.current_accelerator()
-    config.setup.device = torch.device(f'{acc}:{config.setup.ddp.local_rank}')
+    config.setup.device = f'{acc}:{config.setup.ddp.local_rank}'
 
     return config
 

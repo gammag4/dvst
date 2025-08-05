@@ -16,14 +16,14 @@ import torch.amp as amp
 from src.config import load_config
 from src.datasets.full_dataset import FullDataset
 from src.model import DVST
-from src.utils import create_bound_function
+from src.utils import create_bound_function, preprocess_scene_videos, get_num_params
 
 
 class GradScaler(amp.GradScaler):
     # Gradient Scaler with batch replay
     def __init__(self, device, enabled, batch_replay_enabled, max_replays):
         super().__init__(device=device, enabled=enabled)
-        self.batch_replay_enabled = batch_replay_enabled
+        self.batch_replay_enabled = enabled and batch_replay_enabled
         self.max_replays = max_replays
         self.should_replay_batch = False
         self.num_replays = 0
@@ -65,13 +65,13 @@ class Trainer:
         model: torch.nn.Module,
         train_data: DataLoader,
         optimizer: torch.optim.Optimizer,
-        run_batch,
         config
     ) -> None:
         self.device = config.setup.device
         self.local_rank = config.setup.ddp.local_rank
         self.rank = config.setup.ddp.rank
         self.save_every = config.train.save_every
+        self.save_every_batches = config.train.save_every_batches
         self.amp_enabled = config.setup.amp.enabled
         self.amp_dtype = config.setup.amp.dtype
         self.grad_clipping_enabled = config.train.grad_clipping.enabled
@@ -81,7 +81,6 @@ class Trainer:
         self.model = model.to(self.device)
         self.train_data = train_data
         self.optimizer = optimizer
-        self._run_batch = create_bound_function(self, run_batch)
 
         # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing checkpoint
         # Starts from checkpoint if exists
@@ -95,6 +94,7 @@ class Trainer:
         # This also works for multi-GPU models, but in that case, device_ids and output_device must NOT be set,
         # these should be sent to the proper devices by either the application or by model.forward()
         self.model = DDP(self.model, device_ids=[self.local_rank])
+        get_num_params(self.model.module)
         
         # Gradient scaler for AMP (probably not needed if using bfloat16)
         self.scaler = GradScaler(
@@ -114,23 +114,25 @@ class Trainer:
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.scaler.load_state_dict(checkpoint['scaler'])
         self.epochs_run = checkpoint['epochs_run']
+        self.current_batch = checkpoint['current_batch']
 
-        print(f'Resuming training from checkpoint at Epoch {self.epochs_run}')
+        print(f'Resuming training from checkpoint | Epoch {self.epochs_run}')
 
-    def _save_checkpoint(self, epoch):
+    def _save_checkpoint(self):
         # We need .module to access model's parameters since it has been wrapped by DDP
         checkpoint = {
-            'model': self.model.module.state_dict(),
+            'model': self.model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'scaler': self.scaler.state_dict(),
-            'epochs_run': epoch,
+            'epochs_run': self.epochs_run,
+            'current_batch': self.current_batch,
         }
 
         torch.save(checkpoint, self.checkpoint_path)
-        print(f'Epoch {epoch} | Training checkpoint saved at {self.checkpoint_path}')
+        print(f'Saving training checkpoint at {self.checkpoint_path} | Epoch {self.epochs_run}')
         
     def _should_replay_batch(self):
-        return self.scaler.should_replay_batch()
+        return self.scaler.should_replay_batch
 
     # Use this function to run a batch for a generic model
     def _run_batch(self, loss_constructor):
@@ -169,43 +171,61 @@ class Trainer:
         return self._should_replay_batch()
 
     def _run_epoch(self, epoch):
-        b_sz = len(next(iter(self.train_data))[0])
-        print(f'[GPU{self.rank}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}')
-
+        print(f'[GPU{self.rank}] Epoch {epoch} / {self.max_epochs}')
+        
         # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
         # See: https://docs.pytorch.org/docs/stable/data.html
         self.train_data.sampler.set_epoch(epoch)
-        self.train_data.dataset.to(self.device) # TODO bruh check if this breaks
-        for scene in self.train_data:
-            videos, queries, targets, n_frames = scene.sources, scene.queries, scene.targets, scene.n_frames
-            self.current_latent_embeds = self.model.start_latent_embeds
+        for batch_number, item in enumerate(self.train_data):
+            if batch_number < self.current_batch: # For loading checkpoint
+                continue
             
-            for i in range(0, n_frames, self.model.scene_batch_size):
-                start, end = i, min(n_frames, i + self.model.scene_batch_size)
+            print(f'[GPU{self.rank}] Batch: {batch_number} / {len(self.train_data)}')
+            self.current_batch = batch_number
+
+            scene = preprocess_scene_videos(item, self.device)
+            videos, queries, targets, n_frames = scene.sources, scene.queries, scene.targets, scene.n_frames
+            self.current_latent_embeds = self.model.module.start_latent_embeds
+            
+            for i in range(0, n_frames, self.model.module.scene_batch_size):
+                print(f'[GPU{self.rank}] Frame: {i} / {n_frames}')
+
+                start, end = i, min(n_frames, i + self.model.module.scene_batch_size)
                 
                 # TODO fix this abomination put in model
-                if i != 0:
-                    def run_batch1():
-                        loss, self.current_latent_embeds = self.model.forward(videos, queries, targets, start, end, self.current_latent_embeds)
-                        self.current_latent_embeds = self.current_latent_embeds.detach()
-                        return loss
-                    # Batch replaying
-                    while self._run_batch(run_batch1):
-                        pass
-                
-                def run_batch2():
-                    loss, _ = self.model.forward(videos, queries, targets, start, end, self.model.start_latent_embeds)
+                # TODO use two optimizers, one for this part without considering latent embeds params
+                def run_batch1():
+                    loss, self.current_latent_embeds = self.model.forward(videos, queries, targets, start, end, self.current_latent_embeds)
+                    self.current_latent_embeds = self.current_latent_embeds.detach()
+                    if i != 0:
+                        # Adds start_latent_embeds to graph just to prevent the model from complaining bc not all parameters are being optimized
+                        loss = loss + (self.model.module.start_latent_embeds).sum() * 0
                     return loss
                 # Batch replaying
-                while self._run_batch(run_batch2):
+                while self._run_batch(run_batch1):
                     pass
+                
+                if i != 0:
+                    def run_batch2():
+                        loss, _ = self.model.forward(videos, queries, targets, start, end, self.model.module.start_latent_embeds)
+                        return loss
+                    # Batch replaying
+                    while self._run_batch(run_batch2):
+                        pass
+            
+            self.current_batch += 1
+            
+            if self.save_every_batches is not None and self.rank == 0 and self.current_batch % self.save_every_batches == 0:
+                self._save_checkpoint()
 
     def train(self):
         for epoch in range(self.epochs_run, self.max_epochs):
+            self.current_batch = 0
             self._run_epoch(epoch)
-            # Ensures only saves for first GPU to prevent redundancy
-            if self.rank == 0 and epoch % self.save_every == 0:
-                self._save_checkpoint(epoch)
+            self.epochs_run = epoch
+            # Ensures only saves from first GPU to prevent redundancy
+            if self.save_every is not None and self.rank == 0 and epoch % self.save_every == 0:
+                self._save_checkpoint()
 
 
 def enable_reproducibility(seed, rank):
@@ -230,7 +250,8 @@ def init_ddp(config):
     # Set num threads per process for OpenMP (used by DDP, see https://github.com/pytorch/pytorch/blob/65e6194aeb3269a182cfe2c05c122159da12770f/torch/distributed/run.py#L597-L608)
     # Should be set to num_cpu_threads / num_processes_per_node, that way you have that many threads for each process in the node
     num_cpus = os.cpu_count()
-    os.environ['OMP_NUM_THREADS'] = num_cpus // config.setup.ddp.local_world_size + (1 if config.setup.ddp.local_rank > num_cpus % config.setup.ddp.local_world_size else 0)
+    num_threads = num_cpus // config.setup.ddp.local_world_size + (1 if config.setup.ddp.local_rank > num_cpus % config.setup.ddp.local_world_size else 0)
+    os.environ['OMP_NUM_THREADS'] = str(num_threads)
 
     # Best practice when using DDP with torchrun, since the GPU used for this process will always be the one specified by local_rank
     # This prevents hangs or excessive memory usage on GPU:0
@@ -264,7 +285,7 @@ def prepare_dataloader(dataset: Dataset, config):
 
 def prepare_optimizer(model, config):
     # Removing parameters that are not optimized
-    params = [p for p in model.parameters() if not p.requires_grad]
+    params = [p for p in model.parameters() if p.requires_grad]
 
     return torch.optim.AdamW(
         params,
@@ -328,17 +349,16 @@ if __name__ == '__main__':
     # https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/performance_tuning/tuning_guide.html#numactl
 
     # Running single node:
-    # torchrun --standalone --nproc-per-node=gpu script.py 50 10
+    # torchrun --standalone --nproc-per-node=gpu train.py --config_file=res/config.yaml
     # --standalone: tells it is a single-machine setup
     # --nproc-per-node: num processes per node, can be a number, "gpu" which will create a process per gpu
-    # script.py
-    #   total_epochs: 50
-    #   save_every: 10
+    # train.py
+    #   config_file: res/config.yaml
 
     # Running multi-node:
     # We run the command in each node, specifying how many nodes in total and the global rank of the current node
     # We also need to set rendezvous arguments to allow them to synchronize and communicate
-    # torchrun --nproc-per-node=gpu --nnodes=2 --node-rank=0 --rdzv-id=456 --rdzv-backend=c10d --rdzv-endpoint=172.31.43.139:29603 script.py 50 10
+    # torchrun --nproc-per-node=gpu --nnodes=2 --node-rank=0 --rdzv-id=456 --rdzv-backend=c10d --rdzv-endpoint=172.31.43.139:29603 train.py --config_file=res/config.yaml
     # --nnodes: total num of nodes (can also be in format "min_nodes:max_nodes" where it looks for at least min_nodes and for at most max_nodes, also called elastic launch)
     # --node-rank: current node rank (between 0 and nnodes - 1)
     #   it seems like it does not need to be specified when using SLURM bc it already passes $SLURM_NODEID down

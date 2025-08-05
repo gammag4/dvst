@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import Dataset
 from torchcodec.decoders import VideoDecoder
 
-from src.utils import preprocess_scene_videos, colmap_poses_to_intrinsics_extrinsics
+from src.utils import colmap_poses_to_intrinsics_extrinsics
 
 
 # Download dataset from https://github.com/facebookresearch/Neural_3D_Video/releases
@@ -18,7 +18,6 @@ class RawPlenopticDataset(Dataset):
         self.path = path
         self.fps = 30
         self.include_test = include_test
-        self.device = None
 
         scene_names = list(filter(lambda p: os.path.isdir(os.path.join(self.path, p)), os.listdir(self.path)))
 
@@ -39,11 +38,7 @@ class RawPlenopticDataset(Dataset):
             scenes.append(res)
 
         self.data = scenes
-        
-    def to(self, device):
-        self.device = device
-        return self
-
+    
     def __len__(self):
         return len(self.data)
 
@@ -52,4 +47,4 @@ class RawPlenopticDataset(Dataset):
         # First video is the test one
         scene = scene if self.include_test else scene[1:]
         
-        return preprocess_scene_videos(scene, self.device)
+        return scene

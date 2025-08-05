@@ -1,10 +1,12 @@
 import importlib
 import math
+import random
 
 from easydict import EasyDict as edict
 
 import torch
 from torchcodec.decoders import VideoDecoder
+import torchvision.transforms.functional as VF
 
 
 def format_big_number(num):
@@ -19,11 +21,15 @@ def format_big_number(num):
     return f"{num:.2f}{unit}"
 
 
-def print_num_params(model):
+def get_num_params(model, print_params=True):
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
-    print(f'Total params: {format_big_number(total_params)}; Trainable params: {format_big_number(trainable_params)}')
+    res = f'Total params: {format_big_number(total_params)}; Trainable params: {format_big_number(trainable_params)}'
+    if print_params:
+        print(res)
+    else:
+        return res
 
 
 def create_bound_function(self, func):
@@ -65,7 +71,7 @@ def colmap_poses_to_intrinsics_extrinsics(data):
     return K, T, (h, w)
 
 
-def preprocess_scene_video(video_path, K, R, t, fps, device):
+def preprocess_scene_video(video_path, K, R, t, fps, resize_to, device):
     # Preprocesses data for a scene video and returns the result
     # R and t may be either just one matrix for the entire thing (static cameras) or a batch of matrices, one for each frame (moving cameras)
     # TODO do matrix computations from here precached and store in database, especially the ones for moving cameras, which have per-frame matrices
@@ -73,13 +79,19 @@ def preprocess_scene_video(video_path, K, R, t, fps, device):
 
     K, R, t = [i.to(device) if isinstance(i, torch.Tensor) else torch.tensor(i, device=device) for i in (K, R, t)]
     video = VideoDecoder(video_path, device=device)
-    shape = torch.Size([len(video), *video[0].shape])
+    shape = torch.Size([len(video), *(video[0].shape if resize_to is None else (video[0].shape[0], *resize_to))])
 
     # Takes into account resized images
-    h_real, w_real = shape[-2:]
+    h_real, w_real = shape[-2:] if resize_to is None else resize_to
     h, w = 2 * K[1, 2], 2 * K[0, 2]
     K[1, 2], K[0, 2] = h_real / 2, w_real / 2 # p_y, p_x
     K[0, 0], K[1, 1] = K[0, 0] * (w_real / w), K[1, 1] * (h_real / h) # c_x, c_y
+    
+    R = R.squeeze().reshape((-1, 3, 3))
+    t = t.squeeze().reshape((-1, 3))
+    
+    R = R.repeat((shape[0], 1, 1)) if R.shape[0] == 1 else R
+    t = t.repeat((shape[0], 1)) if t.shape[0] == 1 else t
     
     # Frame times
     time = torch.arange(shape[-4], device=device) / fps
@@ -88,29 +100,51 @@ def preprocess_scene_video(video_path, K, R, t, fps, device):
         video=video,
         K=K,
         Kinv=K.inverse(),
-        R=R.squeeze().reshape((-1, 3, 3)),
-        t=t.squeeze().reshape((-1, 3)),
+        R=R,
+        t=t,
         time=time,
-        shape=shape
+        shape=shape,
+        resize_to=resize_to
     )
 
 
-def preprocess_scene_videos(video_tuples, device):
+def preprocess_scene_videos(scene, device):
     # Processes data from multiple scene video tuples, which should be in the format of the args given to preprocess_scene_video
     # Should be used in dataset.__getitem__()
-    videos = [preprocess_scene_video(*v, device) for v in video_tuples]
+    
+    video_tuples = scene.video_tuples
+    n_sources = scene.n_sources
+    n_targets = scene.n_targets
+    shuffle = scene.shuffle
+    shuffle_before_splitting = scene.shuffle_before_splitting
+    resize_to = scene.resize_to
+    
+    videos = [preprocess_scene_video(*v, resize_to, device) for v in video_tuples]
     n_frames = min((v.shape[-4] for v in videos))
 
+    if shuffle and shuffle_before_splitting:
+        random.shuffle(videos)
+
+    sources, targets = videos[-n_sources:], videos[:n_targets]
+
+    if shuffle and not shuffle_before_splitting:
+        random.shuffle(sources)
+        random.shuffle(targets)
+    
+    targets, queries = targets, targets # TODO fix
+
+    # Sources is the list of source videos that will be used to create latent representation of scene
+    # Queries is the list of each frame query (pose + time frame) to be retrieved
+    # Targets is the ground truth videos
     return edict(
-        videos=videos,
-        n_frames=n_frames
+        sources=sources,
+        queries=queries,
+        targets=targets,
+        n_frames=n_frames,
     )
 
 
 def get_video_slice(v, start, end):
-    if type(v) in [VideoDecoder, torch.Tensor]:
-        return v[start:end] / 255.0
-
     res = edict(
         K=v.K,
         Kinv=v.Kinv,
@@ -120,8 +154,12 @@ def get_video_slice(v, start, end):
         shape=torch.Size([end - start, *v.shape[1:]])
     )
     
-    if v.get('video', None) is not None:
-        res.video = v.video[start:end] / 255.0
+    if v.video is not None:
+        video = v.video[start:end] / 255.0
+        if v.resize_to is not None:
+            video = VF.resize(video, v.resize_to)
+
+        res.video = video
     
     return res
 

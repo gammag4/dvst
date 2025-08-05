@@ -39,6 +39,7 @@ class DVSTDecoder(nn.Module):
         q = video_query
         Kinv, R, t, time, hw = q.Kinv, q.R, q.t, q.time, q.shape[-2:]
         pose_embeds, pad = self.pose_encoder(Kinv, R, t, time, None, hw) # Computes query embeddings
+        h = (hw[0] + pad[2] + pad[3]) // self.p
         Is = []
         
         # For now, generating only a single image at a time
@@ -47,12 +48,12 @@ class DVSTDecoder(nn.Module):
             embeds = embeds.unsqueeze(0)
 
             embeds = torch.concat([latent_embeds, embeds], dim=-2) # Concats embeddings with latent embeddings
-            embeds = self.transformer(embeds) # Creates image embeddings using transformer
-            embeds = embeds[..., latent_embeds.shape[-2]:, :] # Discards embeddings mapped from latent embeddings
-            embeds = self.embeds_to_patch_embeds(embeds) # Maps embeddings to patch embeddings
+            final_embeds = self.transformer(embeds) # Creates image embeddings using transformer
+            final_embeds = final_embeds[..., latent_embeds.shape[-2]:, :] # Discards embeddings mapped from latent embeddings
+            final_embeds = self.embeds_to_patch_embeds(final_embeds) # Maps embeddings to patch embeddings
 
-            I_padded = einx.rearrange('... (h w) (c p1 p2) -> ... c (h p1) (w p2)', embeds, h=math.isqrt(embeds.shape[-2]), c=self.C, p1=self.p, p2=self.p) # Maps patch embeddings back to image
-            I = I_padded[pad[2]:I_padded.shape[-2]-pad[3], pad[0]:I_padded.shape[-1]-pad[1]]
+            I_padded = einx.rearrange('... (h w) (c p1 p2) -> ... c (h p1) (w p2)', final_embeds, h=h, c=self.C, p1=self.p, p2=self.p) # Maps patch embeddings back to image
+            I = I_padded[..., pad[2]:I_padded.shape[-2]-pad[3], pad[0]:I_padded.shape[-1]-pad[1]]
 
             Is.append(I)
         

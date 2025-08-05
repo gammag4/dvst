@@ -53,7 +53,7 @@ class DVST(nn.Module):
         
         for query, target in zip(curr_queries, curr_targets):
             frames = self.generate_frames(latent_embeds, query)
-            l = self.loss_fn(frames, target) / frames[0].numel()
+            l = self.loss_fn(frames, target.video) / frames[0].numel()
             loss = loss + l
         
         return loss, latent_embeds

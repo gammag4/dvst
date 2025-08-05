@@ -14,10 +14,10 @@ setup:
     dtype: [(obj), torch.bfloat16]
     scaler:
       # Enables/disables grad scaling
-      enabled: true
+      enabled: false
       batch_replay:
         # Enables/disables batch replaying
-        enabled: true
+        enabled: false
         # Sets maximum number of replays for a batch before giving up
         max_replays: 4
   # Seed for computations
@@ -42,7 +42,7 @@ model:
   C: 3
   # Number of octaves for representing each of the 6 components from plucker rays and the time component
   # TODO change code to not use octaves/duplicate coordinates if n_oct = 1
-  n_oct: 6
+  n_oct: 1
 
   # Number of layers in transformer encoder
   N_enc: 2
@@ -70,7 +70,7 @@ model:
   # TODO How many frames to break scenes into (use if using input scenes that are too big)
   # When using this, after the specified number of frames, the latent_embedding has its grad graph removed and becomes a leaf tensor
   #   Its gradients are not propagated back to the start_latent_embeds parameter, but this saves memory
-  scene_batch_size: 3
+  scene_batch_size: 6
 
   # frames_per_scene is the size of the batches that the videos will be broken into to create scenes
   #   TODO this was from the old idea of breaking scene into smaller batches of 3
@@ -93,9 +93,9 @@ train:
     betas: [0.9, 0.95]
   data:
     dataloader:
-      batch_size: 32
+      batch_size: null
       num_workers: 4 # TODO 4 per gpu, needs to be checked (source: https://discuss.pytorch.org/t/guidelines-for-assigning-num-workers-to-dataloader/813/5)
-      prefetch_factor: 4
+      prefetch_factor: null
       shuffle: true
 
     # TODO Add MultiShapeNet dataset https://srt-paper.github.io/#dataset
@@ -109,15 +109,19 @@ train:
       shuffle_before_splitting: true
       n_sources: 2
       n_targets: null
+      # Tells which dimensions to resize frames to (H, W). If null, does not resize
+      resize_to: [64, 114]
     - dataset: [(obj), 'src.datasets.raw_plenoptic_dataset.RawPlenopticDataset', 'res/tmp/plenoptic/']
       shuffle: true
       shuffle_before_splitting: true
       n_sources: 2
       n_targets: null
+      resize_to: [64, 114]
 
-  total_epochs: 50
-  save_every: 10
-  snapshot_path: snapshot.pt
+  total_epochs: 1
+  save_every: null
+  save_every_batches: 1
+  checkpoint_path: res/tmp/checkpoint.pt
   grad_clipping:
     # Whether to use gradient clipping
     enabled: true

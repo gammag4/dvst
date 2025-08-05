@@ -5,8 +5,6 @@ import torch
 from torch.utils.data import Dataset
 from torchcodec.decoders import VideoDecoder
 
-from src.utils import preprocess_scene_videos
-
 
 class RawPanopticDataset(Dataset):
     # if is_processed, uses videos with name hd_**_**_r.mp4 instead of hd_**_**.mp4
@@ -14,7 +12,6 @@ class RawPanopticDataset(Dataset):
         self.path = path
         self.is_processed = is_processed
         self.fps = {'hd': 29.97, 'vga': 25.0, 'kinect-color': 30}
-        self.device = None
 
         scenes = []
         for sname in os.listdir(self.path):
@@ -40,11 +37,7 @@ class RawPanopticDataset(Dataset):
             scenes.append(videos)
 
         self.data = scenes
-        
-    def to(self, device):
-        self.device = device
-        return self
-
+    
     def _get_video_name(self, vid_id):
         return f'hd_{vid_id}_r.mp4' if self.is_processed else f'hd_{vid_id}.mp4'
 
@@ -52,4 +45,4 @@ class RawPanopticDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, i):
-        return preprocess_scene_videos(self.data[i], self.device)
+        return self.data[i]
