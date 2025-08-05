@@ -84,6 +84,8 @@ model:
     # Dropout rate
     # TODO test separate dropouts for each layer
     dropout: 0.1
+    loss: [(obj), src.model.loss.PerceptualLoss, null]
+    # loss: [(obj), torch.nn.MSELoss, null]
 
 train:
   optimizer:

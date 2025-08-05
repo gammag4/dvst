@@ -26,8 +26,7 @@ class DVST(nn.Module):
         self.encoder = DVSTEncoder(self.config, self.pose_encoder)
         self.decoder = DVSTDecoder(self.config, self.pose_encoder)
         
-        # TODO
-        self.loss_fn = F.mse_loss
+        self.loss = config.train.loss
 
     def create_scene_latents(self, videos, n_frames):
         latent_embeds = self.start_latent_embeds
@@ -46,14 +45,14 @@ class DVST(nn.Module):
         loss = 0.
         
         curr_videos = get_videos_slice(videos, start, end)
-        curr_queries = get_videos_slice(queries, start, end)
+        curr_queries = get_videos_slice(queries, start, end) # TODO fix so that it starts from the beginning
         curr_targets = get_videos_slice(targets, start, end)
         
         latent_embeds = self.encoder(latent_embeds, curr_videos)
         
         for query, target in zip(curr_queries, curr_targets):
             frames = self.generate_frames(latent_embeds, query)
-            l = self.loss_fn(frames, target.video) / frames[0].numel()
+            l = self.loss(frames, target.video) # TODO fix so that frames from starting batches receive less weights every time since they get repeated more
             loss = loss + l
         
         return loss, latent_embeds
