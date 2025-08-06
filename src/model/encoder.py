@@ -15,9 +15,11 @@ class DVSTEncoder(nn.Module):
         self.n_lat = self.config.n_lat
         self.d_model = self.config.d_model
         
+        self.start_latent_embeds = nn.Parameter(torch.zeros((1, self.config.n_lat, self.config.d_model)))
         self.pose_encoder = pose_encoder
         self.latent_aggregator = create_bound_function(self, self.config.latent_aggregator)
         
+        self.latent_norm = nn.LayerNorm(self.config.d_model) #TODO check RMSNorm
         self.transformer = Encoder(
             self.config.N_enc,
             self.config.d_model,
@@ -30,7 +32,10 @@ class DVSTEncoder(nn.Module):
             self.config.attn_op
         )
         
-    def forward(self, latent_embeds, source_videos):
+    def forward(self, source_videos, latent_embeds=None):
+        if latent_embeds is None:
+            latent_embeds = self.latent_norm(self.start_latent_embeds)
+        
         # Computes frame embeddings for all videos and gets each embedding
         pose_embeds = [f_embed for v in source_videos for f_embed in self.pose_encoder(v.Kinv, v.R, v.t, v.time, v.video)[0]]
             

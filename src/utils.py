@@ -22,6 +22,7 @@ def format_big_number(num):
 
 
 def get_num_params(model, print_params=True):
+    # TODO change to return model info
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
@@ -77,7 +78,7 @@ def preprocess_scene_video(video_path, K, R, t, fps, resize_to, device):
     # TODO do matrix computations from here precached and store in database, especially the ones for moving cameras, which have per-frame matrices
     # TODO add an UV option too (to convert to uv) (also actually add it precached too)
 
-    K, R, t = [i.to(device) if isinstance(i, torch.Tensor) else torch.tensor(i, device=device) for i in (K, R, t)]
+    K, R, t = [i.to(torch.float32).to(device) if isinstance(i, torch.Tensor) else torch.tensor(i, device=device) for i in (K, R, t)]
     video = VideoDecoder(video_path, device=device)
     shape = torch.Size([len(video), *(video[0].shape if resize_to is None else (video[0].shape[0], *resize_to))])
 
