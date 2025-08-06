@@ -12,14 +12,15 @@ setup:
     enabled: true
     # Sets AMP data type
     dtype: [(obj), torch.bfloat16]
+  grad_manager:
     scaler:
       # Enables/disables grad scaling
       enabled: false
-      batch_replay:
-        # Enables/disables batch replaying
+      batch_retry:
+        # Enables/disables batch retrying
         enabled: false
-        # Sets maximum number of replays for a batch before giving up
-        max_replays: 4
+        # Sets maximum number of retries for a batch before giving up
+        max_retries: 4
   # Seed for computations
   seed: 42
   ddp:
@@ -42,7 +43,7 @@ model:
   C: 3
   # Number of octaves for representing each of the 6 components from plucker rays and the time component
   # TODO change code to not use octaves/duplicate coordinates if n_oct = 1
-  n_oct: 1
+  n_oct: 6
 
   # Number of layers in transformer encoder
   N_enc: 2

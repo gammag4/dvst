@@ -19,43 +19,67 @@ from src.model import DVST
 from src.utils import create_bound_function, preprocess_scene_videos, get_num_params
 
 
-class GradScaler(amp.GradScaler):
-    # Gradient Scaler with batch replay
-    def __init__(self, device, enabled, batch_replay_enabled, max_replays):
+# Manages gradient scaling, skipping and batch retrying if skipped, and does gradient skipping even with GradScaler disabled
+class GradManager(amp.GradScaler):
+    # Gradient Scaler with batch retrying
+    def __init__(self, device, enabled, batch_retry_enabled, max_retries):
         super().__init__(device=device, enabled=enabled)
-        self.batch_replay_enabled = enabled and batch_replay_enabled
-        self.max_replays = max_replays
-        self.should_replay_batch = False
-        self.num_replays = 0
+        self.batch_retry_enabled = batch_retry_enabled
+        self.max_retries = max_retries
+        self.should_retry_batch = False
+        self.num_retries = 0
+        self._skipped = False
     
-    def update(self):
+    def update(self, new_scale = None):
         old_scale = self.get_scale()
-        super().update()
-
+        super().update(new_scale)
+        
         # Checks whether current batch has been skipped due to inf/nan grads
         # If the scale is smaller than before, it means that it updated its scale because of inf/nan grads
-        if self.batch_replay_enabled and self.get_scale() < old_scale and self.num_replays < self.max_replays:
-            if self.should_replay_batch:
-                self.num_replays += 1
-            self.should_replay_batch = True
+        if self._enabled:
+            self._skipped = self.get_scale() < old_scale
+
+        if self.batch_retry_enabled and self.num_retries < self.max_retries and self._skipped:
+            if self.should_retry_batch:
+                self.num_retries += 1
+            self.should_retry_batch = True
         else:
-            self.num_replays = 0
-            self.should_replay_batch = False
+            self.num_retries = 0
+            self.should_retry_batch = False
+        self._skipped = False
+    
+    def step(self, optimizer, *args, **kwargs):
+        if(self._enabled):
+            return super().step(optimizer, *args, **kwargs)
+        
+        params = [p for pg in optimizer.param_groups for p in pg['params']]
+        should_step = True
+        for param in params:
+            if param.grad is not None:
+                if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                    should_step = False
+                    break
+        
+        if should_step:
+            return optimizer.step()
+        
+        self._skipped = True
+        return None
     
     def state_dict(self):
         return {
-            'batch_replay_enabled': self.batch_replay_enabled,
-            'max_replays': self.max_replays,
-            'should_replay_batch': self.should_replay_batch,
-            'num_replays': self.num_replays,
+            'batch_retry_enabled': self.batch_retry_enabled,
+            'max_retries': self.max_retries,
+            'should_retry_batch': self.should_retry_batch,
+            'num_retries': self.num_retries,
             **super().state_dict()
         }
     
     def load_state_dict(self, state_dict):
-        self.batch_replay_enabled = state_dict.pop('batch_replay_enabled')
-        self.max_replays = state_dict.pop('max_replays')
-        self.should_replay_batch = state_dict.pop('should_replay_batch')
-        self.num_replays = state_dict.pop('num_replays')
+        self.batch_retry_enabled = state_dict.pop('batch_retry_enabled')
+        self.max_retries = state_dict.pop('max_retries')
+        self.should_retry_batch = state_dict.pop('should_retry_batch')
+        self.num_retries = state_dict.pop('num_retries')
         return super().load_state_dict(state_dict)
 
 
@@ -81,6 +105,7 @@ class Trainer:
         self.model = model.to(self.device)
         self.train_data = train_data
         self.optimizer = optimizer
+        self.loss = []
 
         # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing checkpoint
         # Starts from checkpoint if exists
@@ -97,11 +122,11 @@ class Trainer:
         get_num_params(self.model.module)
         
         # Gradient scaler for AMP (probably not needed if using bfloat16)
-        self.scaler = GradScaler(
+        self.grad_manager = GradManager(
             device=self.device,
-            enabled=self.amp_enabled and config.setup.amp.scaler.enabled,
-            batch_replay_enabled=config.setup.amp.scaler.batch_replay.enabled,
-            max_replays=config.setup.amp.scaler.batch_replay.max_replays,
+            enabled=self.amp_enabled and config.setup.grad_manager.scaler.enabled,
+            batch_retry_enabled=config.setup.grad_manager.scaler.batch_retry.enabled,
+            max_retries=config.setup.grad_manager.scaler.batch_retry.max_retries,
         )
 
     def _load_checkpoint(self):
@@ -112,7 +137,7 @@ class Trainer:
 
         self.model.load_state_dict(checkpoint['model'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
-        self.scaler.load_state_dict(checkpoint['scaler'])
+        self.grad_manager.load_state_dict(checkpoint['grad_manager'])
         self.epochs_run = checkpoint['epochs_run']
         self.current_batch = checkpoint['current_batch']
 
@@ -123,7 +148,7 @@ class Trainer:
         checkpoint = {
             'model': self.model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
-            'scaler': self.scaler.state_dict(),
+            'grad_manager': self.grad_manager.state_dict(),
             'epochs_run': self.epochs_run,
             'current_batch': self.current_batch,
         }
@@ -131,8 +156,8 @@ class Trainer:
         torch.save(checkpoint, self.checkpoint_path)
         print(f'Saving training checkpoint at {self.checkpoint_path} | Epoch {self.epochs_run}')
         
-    def _should_replay_batch(self):
-        return self.scaler.should_replay_batch
+    def _should_retry_batch(self):
+        return self.grad_manager.should_retry_batch
 
     # Use this function to run a batch for a generic model
     def _run_batch(self, loss_constructor):
@@ -143,6 +168,7 @@ class Trainer:
             # output.dtype is bfloat16 because linear layers autocast to bfloat16
             # loss.dtype is float32 because mse_loss layers autocast to float32
             loss = loss_constructor()
+            self.loss.append(loss.detach())
 
         # Exits autocast before backward()
         # Backward passes under autocast are not recommended
@@ -150,11 +176,11 @@ class Trainer:
 
         # Scales the loss, and calls backward()
         # to create scaled gradients
-        self.scaler.scale(loss).backward() # Already called in model
+        self.grad_manager.scale(loss).backward() # Already called in model
         
         # All gradients are scaled in this region up to scaler.step(optimizer), so they need to be unscaled to be used
         # Unscales the gradients of optimizer's assigned params in-place
-        self.scaler.unscale_(self.optimizer)
+        self.grad_manager.unscale_(self.optimizer)
 
         # Gradient clipping
         if self.grad_clipping_enabled:
@@ -163,16 +189,14 @@ class Trainer:
         # Unscales gradients (if not unscaled before) and calls or skips optimizer.step()
         # It skips if there are infs or NaNs in grads
         # Since we called unscale_ before, it will not unscale gradients again
-        self.scaler.step(self.optimizer)
+        self.grad_manager.step(self.optimizer)
         
         # Updates the scale for next iteration
-        self.scaler.update()
+        self.grad_manager.update()
         
-        return self._should_replay_batch()
+        return self._should_retry_batch()
 
     def _run_epoch(self, epoch):
-        print(f'[GPU{self.rank}] Epoch {epoch} / {self.max_epochs}')
-        
         # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
         # See: https://docs.pytorch.org/docs/stable/data.html
         self.train_data.sampler.set_epoch(epoch)
@@ -180,28 +204,31 @@ class Trainer:
             if batch_number < self.current_batch: # For loading checkpoint
                 continue
             
-            print(f'[GPU{self.rank}] Batch: {batch_number} / {len(self.train_data)}')
             self.current_batch = batch_number
-
             scene = preprocess_scene_videos(item, self.device)
             videos, queries, targets, n_frames = scene.sources, scene.queries, scene.targets, scene.n_frames
             self.current_latent_embeds = self.model.module.start_latent_embeds
             
             for i in range(0, n_frames, self.model.module.scene_batch_size):
-                print(f'[GPU{self.rank}] Frame: {i} / {n_frames}')
+                p_epoch = f'Epoch {epoch + 1}/{self.max_epochs}'
+                p_batch = f'; Batch: {batch_number + 1}/{len(self.train_data)}'
+                p_frame = f'; Frame: {i + 1}/{n_frames}'
+                p_loss = f'; Losses: {[f'{l:.5f}' for l in self.loss]}' if len(self.loss) else ''
+                self.loss = []
+                print(f'[GPU{self.rank}] {p_epoch}{p_batch}{p_frame}{p_loss}')
 
                 start, end = i, min(n_frames, i + self.model.module.scene_batch_size)
                 
                 # TODO fix this abomination put in model
-                # TODO use two optimizers, one for this part without considering latent embeds params
                 def run_batch1():
+                    print(self.current_latent_embeds.sum()) # TODO
                     loss, self.current_latent_embeds = self.model.forward(videos, queries, targets, start, end, self.current_latent_embeds)
                     self.current_latent_embeds = self.current_latent_embeds.detach()
                     if i != 0:
                         # Adds start_latent_embeds to graph just to prevent the model from complaining bc not all parameters are being optimized
                         loss = loss + (self.model.module.start_latent_embeds).sum() * 0
                     return loss
-                # Batch replaying
+                # Batch retrying
                 while self._run_batch(run_batch1):
                     pass
                 
@@ -209,7 +236,7 @@ class Trainer:
                     def run_batch2():
                         loss, _ = self.model.forward(videos, queries, targets, start, end, self.model.module.start_latent_embeds)
                         return loss
-                    # Batch replaying
+                    # Batch retrying
                     while self._run_batch(run_batch2):
                         pass
             
