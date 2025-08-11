@@ -293,9 +293,7 @@ def enable_reproducibility(seed, rank):
 def init_ddp(config):
     # Set num threads per process for OpenMP (used by DDP, see https://github.com/pytorch/pytorch/blob/65e6194aeb3269a182cfe2c05c122159da12770f/torch/distributed/run.py#L597-L608)
     # Should be set to num_cpu_threads / num_processes_per_node, that way you have that many threads for each process in the node
-    num_cpus = os.cpu_count()
-    num_threads = num_cpus // config.setup.ddp.local_world_size + (1 if config.setup.ddp.local_rank > num_cpus % config.setup.ddp.local_world_size else 0)
-    os.environ['OMP_NUM_THREADS'] = str(num_threads)
+    os.environ['OMP_NUM_THREADS'] = str(config.setup.num_threads)
 
     # Best practice when using DDP with torchrun, since the GPU used for this process will always be the one specified by local_rank
     # This prevents hangs or excessive memory usage on GPU:0

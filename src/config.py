@@ -42,6 +42,9 @@ def parse_config(config):
 def process_config(config):
     acc = torch.accelerator.current_accelerator()
     config.setup.device = f'{acc}:{config.setup.ddp.local_rank}'
+    
+    num_cpus = os.cpu_count()
+    config.setup.num_threads = num_cpus // config.setup.ddp.local_world_size + (1 if config.setup.ddp.local_rank > num_cpus % config.setup.ddp.local_world_size else 0)
 
     return config
 
