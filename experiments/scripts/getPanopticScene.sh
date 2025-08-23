@@ -53,7 +53,7 @@ cd $downloadPath
 # Download vga videos
 ######################
 if [ "$numVGAViews" -ne "0" ]; then
-    mkdir -p vgaVideos
+    mkdir -p vga
 
     # This order of cameras gives an approximately uniform sampling of views.
     # VGA panels range from 1..20
@@ -65,7 +65,7 @@ if [ "$numVGAViews" -ne "0" ]; then
     	fileName=$(printf "vga_%02d_%02d.mp4" ${panels[c]} ${nodes[c]})
 
    	echo $fileName;
-    	cmd=$(printf "$WGET $mO vgaVideos/$fileName $endpoint/webdata/dataset/$datasetName/videos/vga_shared_crf10/$fileName || rm -v vgaVideos/$fileName")
+    	cmd=$(printf "$WGET $mO vga/$fileName $endpoint/webdata/dataset/$datasetName/videos/vga_shared_crf10/$fileName || rm -v vga/$fileName")
     	eval $cmd
     done
 fi
@@ -75,7 +75,7 @@ fi
 # Download hd videos
 #####################
 if [ "$numHDViews" -ne "0" ]; then
-    mkdir -p hdVideos
+    mkdir -p hd
     panel=0
     # Image 03 is corrupted in this dataset
     if [ "$datasetName" == "160906_band3" ]; then
@@ -88,7 +88,7 @@ if [ "$numHDViews" -ne "0" ]; then
     fileName=$(printf "hd_%02d_%02d.mp4" ${panel} ${nodes[c]})
     echo $fileName;
     #Download and delete if the file is blank
-    	cmd=$(printf "$WGET $mO hdVideos/$fileName $endpoint/webdata/dataset/$datasetName/videos/hd_shared_crf20/$fileName || rm -v hdVideos/$fileName")
+    	cmd=$(printf "$WGET $mO hd/$fileName $endpoint/webdata/dataset/$datasetName/videos/hd_shared_crf20/$fileName || rm -v hd/$fileName")
     	eval $cmd
     done
 fi

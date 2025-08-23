@@ -19,7 +19,7 @@ import torch.amp as amp
 from src.config import load_config
 from src.datasets.full_dataset import FullDataset
 from src.model import DVST
-from src.utils import create_bound_function, preprocess_scene_videos, get_num_params
+from src.utils import create_bound_function, get_num_params
 
 
 # Manages gradient scaling, skipping and batch retrying if skipped, and does gradient skipping even with GradScaler disabled
@@ -219,26 +219,26 @@ class Trainer:
         # See: https://docs.pytorch.org/docs/stable/data.html
         self.train_data.sampler.set_epoch(self.current_epoch + 1)
         for item in self.train_data:
-            scene = preprocess_scene_videos(item, self.device)
-            videos, queries, targets, n_frames = scene.sources, scene.queries, scene.targets, scene.n_frames
+            scene = item.load_scene(self.model.module.scene_batch_size, self.device)
             self.current_latent_embeds = None # When None, it is initialized to the model's start_latent_embeds
             
-            for i in range(0, n_frames, self.model.module.scene_batch_size):
-                # TODO save each batch history at checkpoints too
+            for i, scene_batch in enumerate(scene):
+                # TODO save each batch history at checkpoints too put to separate function
+                #   in same function also save latent_embeds data sum mean var add it explicitly in function as extra args
+                #   add everything and log it to a file
+                #   then visualize everything with a notebook
                 p_epoch = f'Epoch {self.current_epoch + 1}/{self.max_epochs}'
-                p_batch = f'; Batch: {self.current_batch + 1}/{len(self.train_data)}'
-                p_frame = f'; Frame: {i + 1}/{n_frames}'
+                p_batch = f'; Scene: {self.current_batch + 1}/{len(self.train_data)}'
+                p_frame = f'; Frame: {i * scene.batch_size + 1}/{scene.n_frames}'
                 p_loss = f'; Losses: {[f'{l:.5f}' for l in self.loss]}' if len(self.loss) else ''
                 self.loss = []
                 print(f'[GPU{self.rank}] {p_epoch}{p_batch}{p_frame}{p_loss}')
-
-                start, end = i, min(n_frames, i + self.model.module.scene_batch_size)
                 
                 # TODO fix this abomination put in model
                 def run_batch1():
-                    loss, self.current_latent_embeds = self.model.forward(videos, queries, targets, start, end, self.current_latent_embeds)
+                    loss, self.current_latent_embeds = self.model.forward(scene_batch, self.current_latent_embeds)
                     self.current_latent_embeds = self.current_latent_embeds.detach()
-                    # print(self.current_latent_embeds.sum()) # TODO
+                    print(self.current_latent_embeds.sum()) # TODO
                     if i != 0:
                         # Adds start_latent_embeds to graph just to prevent the model from complaining bc not all parameters are being optimized
                         loss = loss + (self.model.module.start_latent_embeds).sum() * 0
@@ -246,23 +246,23 @@ class Trainer:
                 # Batch retrying
                 while self._run_batch(run_batch1):
                     pass
-                    
+                
                 self._try_save_new_batch()
                 
                 if i != 0:
                     def run_batch2():
-                        loss, _ = self.model.forward(videos, queries, targets, start, end)
+                        loss, _ = self.model.forward(scene_batch)
                         return loss
                     # Batch retrying
                     while self._run_batch(run_batch2):
                         pass
-                    
+                
                 self._try_save_new_batch()
             
             # Saving up memory for next scene
-            del scene
+            del scene_batch
             gc.collect()
-            torch.cuda.empty_cache()
+            #torch.cuda.empty_cache() # Not needed
             
             self.current_batch += 1
 
@@ -338,6 +338,11 @@ def prepare_optimizer(model, config):
 
 
 def train(config):
+    data_downloaders = config.train.data.downloaders
+    
+    for downloader in data_downloaders:
+        downloader.download()
+    
     train_dataset = FullDataset(config.train.data.datasets)
     train_data = prepare_dataloader(train_dataset, config.train.data.dataloader)
 

@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import einx
 
+from src.datasets.scene_dataset import View
 from .transformer import Encoder
 
 
@@ -35,9 +36,8 @@ class DVSTDecoder(nn.Module):
             nn.Sigmoid()
         )
 
-    def forward(self, latent_embeds, video_query):
-        q = video_query
-        Kinv, R, t, time, hw = q.Kinv, q.R, q.t, q.time, q.shape[-2:]
+    def forward(self, latent_embeds, query_view: View):
+        Kinv, R, t, time, hw = query_view.Kinv, query_view.R, query_view.t, query_view.time, query_view.shape[-2:]
         pose_embeds, pad = self.pose_encoder(Kinv, R, t, time, None, hw) # Computes query embeddings
         h = (hw[0] + pad[2] + pad[3]) // self.p
         Is = []

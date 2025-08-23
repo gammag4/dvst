@@ -59,7 +59,7 @@ model:
     # Enables QK-Norm
     enabled: true
     # Epsilon for QK-Norm computation
-    eps: 1e-5
+    eps: 1e-4
   # Operation used for attention, should be from xops.fmha
   attn_op: [(obj), xformers.ops.fmha.MemoryEfficientAttentionFlashAttentionOp]
 
@@ -106,20 +106,18 @@ train:
     #   Original: google.github.io/realestate10k/download.html
     #   Easier script to download (supposedly): https://github.com/Findeton/real-state-10k
     # when adding image datasets, concat them into tensor and return it as if it was the video
+
+    downloaders:
+    - [(obj), 'src.datasets.panoptic.downloader.PanopticDownloader', 'res/tmp/panoptic/', 'res/panoptic_scene_names.txt', true, 23, [-1, 256], null, 8]
+
     datasets:
-    - dataset: [(obj), 'src.datasets.raw_panoptic_dataset.RawPanopticDataset', 'res/tmp/panoptic/', true]
-      shuffle: true
-      shuffle_before_splitting: true
-      n_sources: 2
-      n_targets: null
-      # Tells which dimensions to resize frames to (H, W). If null, does not resize
-      resize_to: [64, 114]
-    - dataset: [(obj), 'src.datasets.raw_plenoptic_dataset.RawPlenopticDataset', 'res/tmp/plenoptic/']
-      shuffle: true
-      shuffle_before_splitting: true
-      n_sources: 2
-      n_targets: null
-      resize_to: [64, 114]
+    - [(obj), 'src.datasets.panoptic.dataset.PanopticDataset', 'res/tmp/panoptic/', [64, 114], 2, null]
+    # - dataset: [(obj), 'src.datasets.raw_plenoptic_dataset.RawPlenopticDataset', 'res/tmp/plenoptic/']
+    #   shuffle: true
+    #   shuffle_before_splitting: true
+    #   n_sources: 2
+    #   n_targets: null
+    #   resize_to: [64, 114]
 
   total_epochs: 1
   save_every_batches: 100

@@ -52,7 +52,7 @@ function getProcUnprocVids() {
 # Iterates over all scenes and downloads videos
 for scene in ${scenes[@]}; do
     scenePath="$downloadPath/$scene"
-    vidsPath="$scenePath/hdVideos"
+    vidsPath="$scenePath/hd"
     mkdir -p "$vidsPath"
 
     getProcUnprocVids "$vidsPath"

@@ -3,6 +3,7 @@ import torch.nn as nn
 
 from src.utils import create_bound_function
 
+from src.datasets.scene_dataset import Scene
 from .transformer import Encoder
 
 
@@ -31,18 +32,21 @@ class DVSTEncoder(nn.Module):
             nn.GELU,
             self.config.attn_op
         )
-        
-    def forward(self, source_videos, latent_embeds=None):
+    
+    def forward(self, scene: Scene, latent_embeds=None):
         if latent_embeds is None:
             latent_embeds = self.latent_norm(self.start_latent_embeds)
         
         # Computes frame embeddings for all videos and gets each embedding
-        pose_embeds = [f_embed for v in source_videos for f_embed in self.pose_encoder(v.Kinv, v.R, v.t, v.time, v.video)[0]]
-            
+        pose_embeds = [self.pose_encoder(v.Kinv, v.R, v.t, v.time, v.view)[0] for v in scene.sources]
+        
         # Passes each frame embedding through the transformer aggregating into latent_embeds
-        for embeds in pose_embeds:
-            embeds = embeds.unsqueeze(0)
-
-            latent_embeds = self.latent_aggregator(latent_embeds, embeds)
-
+        for frame in range(scene.n_frames):
+            for embeds_list in pose_embeds:
+                embeds = embeds_list[frame:frame+1]
+                
+                # Batch will have size 0 if it went past video size (this skips non-existent frames)
+                if embeds.shape[0] != 0:
+                    latent_embeds = self.latent_aggregator(latent_embeds, embeds)
+        
         return latent_embeds
