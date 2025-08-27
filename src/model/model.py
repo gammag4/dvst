@@ -24,16 +24,16 @@ class DVST(nn.Module):
         self.pose_encoder = PoseEncoder(self.config)
         self.encoder = DVSTEncoder(self.config, self.pose_encoder)
         self.decoder = DVSTDecoder(self.config, self.pose_encoder)
-        self.start_latent_embeds = self.encoder.start_latent_embeds
         
         self.loss = config.train.loss
     
-    def get_start_latent_embeds(self):
+    @property
+    def start_latent_embeds(self):
         return self.encoder.start_latent_embeds
     
     def create_scene_latents(self, scene: Scene):
         latent_embeds = None
-        latent_embeds = self.encoder(scene.sources, latent_embeds)
+        latent_embeds = self.encoder(scene, latent_embeds)
         return latent_embeds
     
     def generate_frames(self, latent_embeds, video_query: View):
@@ -45,9 +45,10 @@ class DVST(nn.Module):
         latent_embeds = self.encoder(scene, latent_embeds)
         
         # TODO fix so that the loss starts from the beginning of the scene (queries/targets)
-        for query, target in scene.query_target_tuples:
+        for query, target in zip(scene.queries, scene.targets):
             frames = self.generate_frames(latent_embeds, query)
-            l = self.loss(frames, target) # TODO fix so that frames from starting batches receive less weights every time since they get repeated more
+            # TODO fix so that frames from starting batches receive less weights every time since they get repeated more
+            l = self.loss(frames, target.view) / query.shape[0]
             loss = loss + l
         
         return loss, latent_embeds

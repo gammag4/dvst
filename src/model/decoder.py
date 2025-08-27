@@ -35,8 +35,8 @@ class DVSTDecoder(nn.Module):
             nn.Linear(in_features=self.d_model, out_features=self.C * self.p ** 2),
             nn.Sigmoid()
         )
-
-    def forward(self, latent_embeds, query_view: View):
+    
+    def forward_batch(self, latent_embeds, query_view: View):
         Kinv, R, t, time, hw = query_view.Kinv, query_view.R, query_view.t, query_view.time, query_view.shape[-2:]
         pose_embeds, pad = self.pose_encoder(Kinv, R, t, time, None, hw) # Computes query embeddings
         h = (hw[0] + pad[2] + pad[3]) // self.p
@@ -56,5 +56,12 @@ class DVSTDecoder(nn.Module):
             I = I_padded[..., pad[2]:I_padded.shape[-2]-pad[3], pad[0]:I_padded.shape[-1]-pad[1]]
 
             Is.append(I)
+        
+        return torch.concat(Is)
+    
+    def forward(self, latent_embeds, query_view: View):
+        Is = []
+        for batch in query_view:
+            Is.append(self.forward_batch(latent_embeds, batch))
         
         return torch.concat(Is)

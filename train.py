@@ -220,7 +220,6 @@ class Trainer:
         self.train_data.sampler.set_epoch(self.current_epoch + 1)
         for item in self.train_data:
             scene = item.load_scene(self.model.module.scene_batch_size, self.device)
-            self.current_latent_embeds = None # When None, it is initialized to the model's start_latent_embeds
             
             for i, scene_batch in enumerate(scene):
                 # TODO save each batch history at checkpoints too put to separate function
@@ -234,28 +233,17 @@ class Trainer:
                 self.loss = []
                 print(f'[GPU{self.rank}] {p_epoch}{p_batch}{p_frame}{p_loss}')
                 
+                # TODO for now it is only splitting the scene in batches and considering each batch as a separate scene
+                # make it so that the gradients get computed for the entire scene and backpropagated by just computing everything until the end without gradients and then
+                # going back computing and propagating gradients at each batch (last batch, second last, ...)
+                
                 # TODO fix this abomination put in model
-                def run_batch1():
-                    loss, self.current_latent_embeds = self.model.forward(scene_batch, self.current_latent_embeds)
-                    self.current_latent_embeds = self.current_latent_embeds.detach()
-                    print(self.current_latent_embeds.sum()) # TODO
-                    if i != 0:
-                        # Adds start_latent_embeds to graph just to prevent the model from complaining bc not all parameters are being optimized
-                        loss = loss + (self.model.module.start_latent_embeds).sum() * 0
+                def run_batch():
+                    loss, _ = self.model.forward(scene_batch)
                     return loss
                 # Batch retrying
-                while self._run_batch(run_batch1):
+                while self._run_batch(run_batch):
                     pass
-                
-                self._try_save_new_batch()
-                
-                if i != 0:
-                    def run_batch2():
-                        loss, _ = self.model.forward(scene_batch)
-                        return loss
-                    # Batch retrying
-                    while self._run_batch(run_batch2):
-                        pass
                 
                 self._try_save_new_batch()
             

@@ -7,19 +7,65 @@ from torchcodec.decoders import VideoDecoder
 import torchvision.transforms.v2.functional as v2f
 
 
-# The view can be either VideoDecoder, a tensor shaped (B, C, H, W), or None if it is a query
-# TODO dependency injection pass view to decoder
-class View:
-    def __init__(self, view: VideoDecoder | torch.Tensor | None, K, Kinv, R, t, time, shape, resize_to=None):
+# TODO organize module into files
+
+class _BatchedIterator:
+    def __init__(self, data):
+        self.data = data
+        self.i = 0
+    
+    def __iter__(self):
+        return self
+    
+    def __next__(self):
+        if self.i >= self.data.n_batches:
+            raise StopIteration
+        
+        batch = self.data.get_batch(self.i)
+        self.i += 1
+        
+        return batch
+
+
+class _BatchedData(ABC):
+    def __init__(self, batch_size=None):
+        self.batch_size = batch_size
+    
+    def __iter__(self):
+        return _BatchedIterator(self)
+    
+    @property
+    @abstractmethod
+    def _n_items(self):
+        pass
+    
+    @property
+    def n_batches(self):
+        return math.ceil(self._n_items / self.batch_size)
+    
+    @abstractmethod
+    def get_slice(self, start, end):
+        pass
+    
+    def get_batch(self, i):
+        if self.batch_size is None:
+            return self.get_slice(None, None)
+        
+        start = i * self.batch_size
+        end = start + self.batch_size
+        return self.get_slice(start, end)
+
+
+class _ViewBase(_BatchedData):
+    def __init__(self, view: VideoDecoder | torch.Tensor | None, shape, batch_size=None, resize_to=None, start=None, end=None):
+        super().__init__(batch_size)
         self._view = view
-        self.K = K
-        self.Kinv = Kinv
-        self.R = R
-        self.t = t
-        self.time = time
         self.shape = shape
         self.resize_to = resize_to
-        self._loaded = False
+        self._loaded = view is None
+        
+        self.start = 0 if start is None else start
+        self.end = self.shape[0] if end is None else end
     
     @property
     def view(self):
@@ -27,7 +73,7 @@ class View:
         if self._loaded:
             return self._view
         
-        view = self._view
+        view = self._view[self.start:self.end]
         
         if self.resize_to is not None:
             view = v2f.resize(view, self.resize_to)
@@ -40,24 +86,80 @@ class View:
         
         return view
     
+    @property
+    def _n_items(self):
+        return self.end - self.start
+    
     def get_slice(self, start, end):
-        view = self._view[start:end]
+        shape = torch.Size([end - start, *self.shape[1:]])
+        
+        start = self.start + start
+        end = self.start + end
+        end = max(start, min(self.end, end))
+        
+        view = self._view[start:end] if (self._view is not None) and self._loaded else self._view
+        
+        return _ViewBase(
+            view,
+            shape,
+            self.batch_size,
+            self.resize_to,
+            start,
+            end
+        )
+
+
+class TargetView(_ViewBase):
+    def __init__(self, view: VideoDecoder | torch.Tensor, shape, batch_size=None, resize_to=None, start=None, end=None):
+        super().__init__(view, shape, batch_size, resize_to, start, end)
+    
+    def get_slice(self, start, end):
+        s = super().get_slice(start, end)
+        new_view = TargetView(
+            s._view,
+            s.shape,
+            s.batch_size,
+            s.resize_to,
+            s.start,
+            s.end
+        )
+        new_view._loaded = self._loaded
+        
+        return new_view
+
+
+# The view can be either VideoDecoder, a tensor shaped (B, C, H, W), or None if it is a query
+# TODO dependency injection pass view to decoder
+class View(_ViewBase):
+    def __init__(self, view: VideoDecoder | torch.Tensor | None, K, Kinv, R, t, time, shape, batch_size=None, resize_to=None, start=None, end=None):
+        super().__init__(view, shape, batch_size, resize_to, start, end)
+        self.K = K
+        self.Kinv = Kinv
+        self.R = R
+        self.t = t
+        self.time = time
+    
+    def get_slice(self, start, end):
         K = self.K
         Kinv = self.Kinv
         R = self.R if self.R.shape[0] == 1 else self.R[start:end]
         t = self.t if self.t.shape[0] == 1 else self.t[start:end]
         time = self.time[start:end]
-        shape = torch.Size([end - start, *self.shape[1:]])
+        
+        s = super().get_slice(start, end)
         
         new_view = View(
-            view,
+            s._view,
             K,
             Kinv,
             R,
             t,
             time,
-            shape,
-            self.resize_to
+            s.shape,
+            s.batch_size,
+            s.resize_to,
+            s.start,
+            s.end
         )
         new_view._loaded = self._loaded
         
@@ -72,11 +174,24 @@ class View:
             self.t,
             self.time,
             self.shape,
-            self.resize_to
+            self.batch_size,
+            self.resize_to,
+            self.start,
+            self.end
         )
-        
+    
     def as_target(self):
-        return self._view
+        target = TargetView(
+            self._view,
+            self.shape,
+            self.batch_size,
+            self.resize_to,
+            self.start,
+            self.end
+        )
+        target._loaded = self._loaded
+        
+        return target
 
 
 class AbstractViewData(ABC):
@@ -99,7 +214,7 @@ class AbstractViewData(ABC):
         # TODO default is return VideoDecoder(self.view_path, device=device)
         pass
     
-    def load_view(self, device):
+    def load_view(self, batch_size, device):
         # Preprocesses data for a scene view and returns the result
         # R and t may be either just one matrix for the entire thing (static cameras) or a batch of matrices, one for each frame (moving cameras)
         # TODO do matrix computations from here precached and store in database, especially the ones for moving cameras, which have per-frame matrices
@@ -135,6 +250,7 @@ class AbstractViewData(ABC):
             t,
             time,
             shape,
+            batch_size,
             self.resize_to
         )
 
@@ -150,45 +266,58 @@ class VideoViewData(AbstractViewData):
 
 # This may either be an entire scene or just one batch
 # Iterating over it iterates over its batches
-class Scene:
-    def __init__(self, views: list[View], n_frames, sources_idx, queries_targets_idx, batch_size):
+class Scene(_BatchedData):
+    def __init__(self, views: list[View], n_frames, batch_size, sources_idx, queries_targets_idx=[], start=None, end=None):
+        super().__init__(batch_size)
         # Sources is the list of source views that will be used to create latent representation of scene
-        # Query-target tuples is a list of tuples of each frame query (pose + time frame) to be retrieved and its respective ground truth view
+        # Queries is a list of frame queries (pose + time frame) to be retrieved
+        # Targets is a list of the respective ground truth views for each query
         self._views = views
         self._sources_idx = sources_idx
         self._queries_targets_idx = queries_targets_idx # TODO separate queries and targets
         
-        self.sources = [self._views[i] for i in self._sources_idx]
-        queries_targets = [self._views[i] for i in self._queries_targets_idx]
-        self.query_target_tuples = [(v.as_query(), v.as_target()) for v in queries_targets]
+        self._sources = None
+        self._queries = None
+        self._targets = None
         
         self.n_frames = n_frames
-        self.batch_size = batch_size
-        self.n_batches = math.ceil(n_frames / batch_size)
         
-        self._current = 0
+        self.start = 0 if start is None else start
+        self.end = self.n_frames if end is None else end
+        
+    @property
+    def sources(self):
+        if self._sources is None:
+            self._sources = [self._views[i] for i in self._sources_idx]
+        
+        return self._sources
+        
+    @property
+    def queries(self):
+        if self._queries is None:
+            self._queries = [self._views[i].as_query() for i in self._queries_targets_idx]
+        
+        return self._queries
+        
+    @property
+    def targets(self):
+        if self._targets is None:
+            self._targets = [self._views[i].as_target() for i in self._queries_targets_idx]
+        
+        return self._targets
+    
+    @property
+    def _n_items(self):
+        return self.n_frames
     
     def get_slice(self, start, end):
         return Scene(
             [v.get_slice(start, end) for v in self._views],
-            self.n_frames,
+            end - start,
+            self.batch_size,
             self._sources_idx,
-            self._queries_targets_idx,
-            self.batch_size
+            self._queries_targets_idx
         )
-    
-    def __iter__(self):
-        return self
-    
-    # Iterates over scene batches
-    def __next__(self):
-        if self._current >= self.n_batches:
-            raise StopIteration
-
-        start = self._current * self.batch_size
-        end = start + self.batch_size
-        self._current += 1
-        return self.get_slice(start, end)
 
 
 class SceneData:
@@ -200,11 +329,11 @@ class SceneData:
     
     def load_scene(self, batch_size, device):
         return Scene(
-            [v.load_view(device) for v in self.view_datas],
+            [v.load_view(batch_size, device) for v in self.view_datas],
             self.n_frames,
+            batch_size,
             self.sources_idx,
-            self.queries_targets_idx,
-            batch_size
+            self.queries_targets_idx
         )
     
     # If n_sources or n_targets are None, all videos are chosen as sources/targets respectively

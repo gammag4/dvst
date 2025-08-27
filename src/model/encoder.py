@@ -33,13 +33,14 @@ class DVSTEncoder(nn.Module):
             self.config.attn_op
         )
     
-    def forward(self, scene: Scene, latent_embeds=None):
+    def forward_batch(self, scene: Scene, latent_embeds=None):
         if latent_embeds is None:
             latent_embeds = self.latent_norm(self.start_latent_embeds)
-        
+    
         # Computes frame embeddings for all videos and gets each embedding
         pose_embeds = [self.pose_encoder(v.Kinv, v.R, v.t, v.time, v.view)[0] for v in scene.sources]
         
+        # TODO use something like RAG to choose which embeds to use from which frames/views and which order to use them in the context window
         # Passes each frame embedding through the transformer aggregating into latent_embeds
         for frame in range(scene.n_frames):
             for embeds_list in pose_embeds:
@@ -48,5 +49,11 @@ class DVSTEncoder(nn.Module):
                 # Batch will have size 0 if it went past video size (this skips non-existent frames)
                 if embeds.shape[0] != 0:
                     latent_embeds = self.latent_aggregator(latent_embeds, embeds)
+        
+        return latent_embeds
+    
+    def forward(self, scene: Scene, latent_embeds=None):
+        for scene_batch in scene:
+            latent_embeds = self.forward_batch(scene_batch, latent_embeds)
         
         return latent_embeds
