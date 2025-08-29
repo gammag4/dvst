@@ -23,7 +23,9 @@ setup:
         max_retries: 4
   # Seed for computations
   seed: 42
-  ddp:
+  distributed:
+    # Number of threads running in each process, already computed from cpu count and topology
+    #num_threads: null
     # Torchrun already sets local and global ranks as environment variables
     # Number of process in the process group
     world_size: [(env), WORLD_SIZE, 1]
@@ -35,8 +37,54 @@ setup:
     local_rank: [(env), LOCAL_RANK, 0]
     # Timeout for ddp process group
     timeout: 1800
+  # Device used in current process, computed in code
+  #device: null
+
+train:
+  optimizer:
+    # Learning rate
+    lr: 1e-4
+    # AdamW betas
+    betas: [0.9, 0.95]
+  total_epochs: 1
+  save_every_batches: 100
+  checkpoint_folder_path: res/tmp/checkpoint/
+  grad_clipping:
+    # Whether to use gradient clipping
+    enabled: true
+    # Maximum gradient norm for gradient clipping
+    max_norm: 1.0
+
+  data:
+    dataloader:
+      batch_size: null
+      num_workers: 4 # TODO 4 per gpu, needs to be checked (source: https://discuss.pytorch.org/t/guidelines-for-assigning-num-workers-to-dataloader/813/5)
+      prefetch_factor: null
+      shuffle: true
+
+    # TODO Add MultiShapeNet dataset https://srt-paper.github.io/#dataset
+    # TODO Add RealEstate10K dataset processed by pixelsplat https://github.com/dcharatan/pixelsplat/blob/main/README.md#acquiring-datasets
+    #   Original: google.github.io/realestate10k/download.html
+    #   Easier script to download (supposedly): https://github.com/Findeton/real-state-10k
+    # when adding image datasets, concat them into tensor and return it as if it was the video
+
+    # Dataset downloaders
+    downloaders:
+    - [(obj), src.datasets.panoptic.downloader.PanopticDownloader, res/tmp/panoptic/, res/panoptic_scene_names.txt, true, 23, [-1, 256], null, 8]
+
+    # Datasets
+    datasets:
+    - [(obj), src.datasets.panoptic.dataset.PanopticDataset, res/tmp/panoptic/, [64, 114], 2, null]
+    # - dataset: [(obj), src.datasets.raw_plenoptic_dataset.RawPlenopticDataset, res/tmp/plenoptic/]
+    #   shuffle: true
+    #   shuffle_before_splitting: true
+    #   n_sources: 2
+    #   n_targets: null
+    #   resize_to: [64, 114]
 
 model:
+  constructor: [(obj), src.model.DVST]
+
   # Patch side length (the images will be broken into patches of size p x p)
   p: 16
   # Number of color channels in each frame
@@ -87,43 +135,3 @@ model:
     dropout: 0.1
     loss: [(obj), src.model.loss.PerceptualLoss, null]
     # loss: [(obj), torch.nn.MSELoss, null]
-
-train:
-  optimizer:
-    # Learning rate
-    lr: 1e-4
-    # AdamW betas
-    betas: [0.9, 0.95]
-  data:
-    dataloader:
-      batch_size: null
-      num_workers: 4 # TODO 4 per gpu, needs to be checked (source: https://discuss.pytorch.org/t/guidelines-for-assigning-num-workers-to-dataloader/813/5)
-      prefetch_factor: null
-      shuffle: true
-
-    # TODO Add MultiShapeNet dataset https://srt-paper.github.io/#dataset
-    # TODO Add RealEstate10K dataset processed by pixelsplat https://github.com/dcharatan/pixelsplat/blob/main/README.md#acquiring-datasets
-    #   Original: google.github.io/realestate10k/download.html
-    #   Easier script to download (supposedly): https://github.com/Findeton/real-state-10k
-    # when adding image datasets, concat them into tensor and return it as if it was the video
-
-    downloaders:
-    - [(obj), 'src.datasets.panoptic.downloader.PanopticDownloader', 'res/tmp/panoptic/', 'res/panoptic_scene_names.txt', true, 23, [-1, 256], null, 8]
-
-    datasets:
-    - [(obj), 'src.datasets.panoptic.dataset.PanopticDataset', 'res/tmp/panoptic/', [64, 114], 2, null]
-    # - dataset: [(obj), 'src.datasets.raw_plenoptic_dataset.RawPlenopticDataset', 'res/tmp/plenoptic/']
-    #   shuffle: true
-    #   shuffle_before_splitting: true
-    #   n_sources: 2
-    #   n_targets: null
-    #   resize_to: [64, 114]
-
-  total_epochs: 1
-  save_every_batches: 100
-  checkpoint_path: res/tmp/checkpoint.pt
-  grad_clipping:
-    # Whether to use gradient clipping
-    enabled: true
-    # Maximum gradient norm for gradient clipping
-    max_norm: 1.0

@@ -2,6 +2,7 @@ import os
 import random
 import datetime
 import gc
+from abc import ABC, abstractmethod
 
 import numpy as np
 import torch
@@ -18,7 +19,6 @@ import torch.amp as amp
 
 from src.config import load_config
 from src.datasets.full_dataset import FullDataset
-from src.model import DVST
 from src.utils import create_bound_function, get_num_params
 
 
@@ -41,7 +41,7 @@ class GradManager(amp.GradScaler):
         # If the scale is smaller than before, it means that it updated its scale because of inf/nan grads
         if self._enabled:
             self._skipped = self.get_scale() < old_scale
-
+        
         if self.batch_retry_enabled and self.num_retries < self.max_retries and self._skipped:
             if self.should_retry_batch:
                 self.num_retries += 1
@@ -88,7 +88,7 @@ class GradManager(amp.GradScaler):
         return super().load_state_dict(state_dict)
 
 
-class Trainer:
+class Trainer(ABC):
     def __init__(
         self,
         model: torch.nn.Module,
@@ -97,15 +97,15 @@ class Trainer:
         config
     ) -> None:
         self.device = config.setup.device
-        self.local_rank = config.setup.ddp.local_rank
-        self.rank = config.setup.ddp.rank
+        self.local_rank = config.setup.distributed.local_rank
+        self.rank = config.setup.distributed.rank
         self.save_every_batches = config.train.save_every_batches
         self.amp_enabled = config.setup.amp.enabled
         self.amp_dtype = config.setup.amp.dtype
         self.grad_clipping_enabled = config.train.grad_clipping.enabled
         self.max_grad_norm = config.train.grad_clipping.max_norm
         self.max_epochs = config.train.total_epochs
-
+        
         self.model = model.to(self.device)
         self.train_data = train_data
         self.optimizer = optimizer
@@ -123,25 +123,27 @@ class Trainer:
             batch_retry_enabled=config.setup.grad_manager.scaler.batch_retry.enabled,
             max_retries=config.setup.grad_manager.scaler.batch_retry.max_retries,
         )
-    
+        
         # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing checkpoint
         # Starts from checkpoint if exists
         self.current_epoch = 0
         self.current_batch = 0
         self.current_global_batch = 0
-        self.checkpoint_path = config.train.checkpoint_path
+        self.checkpoint_folder_path = config.train.checkpoint_folder_path
+        self.checkpoint_path = os.path.join(self.checkpoint_folder_path, 'checkpoint.pt')
+        os.makedirs(self.checkpoint_folder_path, exist_ok=True)
         if os.path.exists(self.checkpoint_path):
             print('Loading checkpoint')
             self._load_checkpoint()
         
         get_num_params(self.model.module)
-
+    
     def _load_checkpoint(self):
         # Maps to the specific device
         # This prevents processes from using others' devices (when set to accelerator:local_rank)
         # TODO I put 'cpu' bc it seems like most people use that, need to check that
         checkpoint = torch.load(self.checkpoint_path, map_location='cpu')
-
+        
         self.model.load_state_dict(checkpoint['model'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.grad_manager.load_state_dict(checkpoint['grad_manager'])
@@ -149,9 +151,9 @@ class Trainer:
         self.current_epoch = checkpoint['epochs_run']
         self.current_batch = checkpoint['current_batch']
         self.current_global_batch = checkpoint['current_global_batch']
-
+        
         print(f'Resuming training from checkpoint | Epoch {self.current_epoch + 1}')
-
+    
     def _save_checkpoint(self):
         # We need .module to access model's parameters since it has been wrapped by DDP
         checkpoint = {
@@ -163,35 +165,41 @@ class Trainer:
             'current_batch': self.current_batch,
             'current_global_batch': self.current_global_batch,
         }
-
+        
         torch.save(checkpoint, self.checkpoint_path)
         print(f'Saving training checkpoint at {self.checkpoint_path} | Epoch {self.current_epoch + 1}')
-        
+    
+    def _load_extras(self):
+        pass
+    
+    def _save_extras(self):
+        pass
+    
     def _try_save_new_batch(self):
         self.current_global_batch += 1
         
         # Ensures only saves from first GPU to prevent redundancy
         if self.rank == 0 and self.current_global_batch % self.save_every_batches == 0:
             self._save_checkpoint()
-        
+    
     def _should_retry_batch(self):
         return self.grad_manager.should_retry_batch
-
+    
     # Use this function to run a batch for a generic model
     def _run_batch(self, loss_constructor):
         self.optimizer.zero_grad(set_to_none=True)
-
+        
         # AMP: Casts operations to mixed precision
         with amp.autocast(device_type=self.device, dtype=self.amp_dtype, enabled=self.amp_enabled):
             # output.dtype is bfloat16 because linear layers autocast to bfloat16
             # loss.dtype is float32 because mse_loss layers autocast to float32
             loss = loss_constructor()
             self.loss.append(loss.detach())
-
+        
         # Exits autocast before backward()
         # Backward passes under autocast are not recommended
         # Backward ops run in the same dtype autocast chose for corresponding forward ops
-
+        
         # Scales the loss, and calls backward()
         # to create scaled gradients
         self.grad_manager.scale(loss).backward() # Already called in model
@@ -199,11 +207,11 @@ class Trainer:
         # All gradients are scaled in this region up to scaler.step(optimizer), so they need to be unscaled to be used
         # Unscales the gradients of optimizer's assigned params in-place
         self.grad_manager.unscale_(self.optimizer)
-
+        
         # Gradient clipping
         if self.grad_clipping_enabled:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm) # TODO
-
+        
         # Unscales gradients (if not unscaled before) and calls or skips optimizer.step()
         # It skips if there are infs or NaNs in grads
         # Since we called unscale_ before, it will not unscale gradients again
@@ -213,7 +221,7 @@ class Trainer:
         self.grad_manager.update()
         
         return self._should_retry_batch()
-
+    
     def _run_epoch(self):
         # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
         # See: https://docs.pytorch.org/docs/stable/data.html
@@ -253,7 +261,7 @@ class Trainer:
             #torch.cuda.empty_cache() # Not needed
             
             self.current_batch += 1
-
+    
     def train(self):
         for self.current_epoch in range(self.current_epoch, self.max_epochs):
             self._run_epoch()
@@ -262,38 +270,38 @@ class Trainer:
 
 def enable_reproducibility(seed, rank):
     # TODO this wont work if restarted
-
+    
     # https://docs.pytorch.org/docs/stable/notes/randomness.html
     # https://discuss.pytorch.org/t/difference-between-torch-manual-seed-and-torch-cuda-manual-seed/13848
-
+    
     seed = seed + rank
     os.environ['PYTHONHASHSEED'] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-
+    
     # Impacts performance
     #torch.use_deterministic_algorithms(True)
-
+    
     # TODO check https://docs.pytorch.org/docs/stable/notes/randomness.html#dataloader
 
 
 def init_ddp(config):
     # Set num threads per process for OpenMP (used by DDP, see https://github.com/pytorch/pytorch/blob/65e6194aeb3269a182cfe2c05c122159da12770f/torch/distributed/run.py#L597-L608)
     # Should be set to num_cpu_threads / num_processes_per_node, that way you have that many threads for each process in the node
-    os.environ['OMP_NUM_THREADS'] = str(config.setup.num_threads)
-
+    os.environ['OMP_NUM_THREADS'] = str(config.distributed.num_threads)
+    
     # Best practice when using DDP with torchrun, since the GPU used for this process will always be the one specified by local_rank
     # This prevents hangs or excessive memory usage on GPU:0
-    torch.accelerator.set_device_index(config.setup.ddp.local_rank)
-
+    torch.accelerator.set_device_index(config.distributed.local_rank)
+    
     # Creates process group
     # `backend` is the backend used for inter-GPU communication (will be 'nccl' when device is 'cuda')
     # When using torchrun, we don't need to specify rank and world size since it already handles this for us
     # There are two ways to initialize process group: TCP and shared file-system. See both here: https://docs.pytorch.org/docs/stable/distributed.html#tcp-initialization
     # See backends here: https://docs.pytorch.org/docs/stable/distributed.html#backends
-    backend = torch.distributed.get_default_backend_for_device(config.setup.device)
-    dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.setup.ddp.timeout))
+    backend = torch.distributed.get_default_backend_for_device(config.device)
+    dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.distributed.timeout))
 
 
 def prepare_dataloader(dataset: Dataset, config):
@@ -316,7 +324,7 @@ def prepare_dataloader(dataset: Dataset, config):
 def prepare_optimizer(model, config):
     # Removing parameters that are not optimized
     params = [p for p in model.parameters() if p.requires_grad]
-
+    
     return torch.optim.AdamW(
         params,
         lr=config.lr,
@@ -325,7 +333,8 @@ def prepare_optimizer(model, config):
     )
 
 
-def train(config):
+def ddp_main(config):
+    # TODO fix downloaders code, get from cloud and also only download in one process per node
     data_downloaders = config.train.data.downloaders
     
     for downloader in data_downloaders:
@@ -333,11 +342,11 @@ def train(config):
     
     train_dataset = FullDataset(config.train.data.datasets)
     train_data = prepare_dataloader(train_dataset, config.train.data.dataloader)
-
-    model = DVST(config=config.model)
-
+    
+    model = config.model.constructor(config=config.model)
+    
     optimizer = prepare_optimizer(model, config.train.optimizer)
-
+    
     # We can also do a distributed evaluation by also using distributed sampler in the evaluation data
     # test_data = prepare_dataloader(test_dataset, config.train.data)
     trainer = Trainer(model, train_data, optimizer, config)
@@ -346,12 +355,12 @@ def train(config):
 
 def main(args):
     config = load_config(args.config_file)
-
+    
     # Allows tf32 optimization (lower float32 precision with higher speed)
     # This also sets torch.backends.cuda.matmul.allow_tf32, see note in https://docs.pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html
     torch.set_float32_matmul_precision(config.setup.tf32_level)
     torch.backends.cudnn.allow_tf32 = config.setup.tf32_level != 'highest'
-
+    
     # Enable cuDNN auto-tuner
     # Runs a short benchmark, chooses the best kernel on the first step and uses it in the next steps
     # then the first step is slower but all other steps are faster
@@ -359,14 +368,14 @@ def main(args):
     # a rule of thumb would be to run for some time with and without it and check which is faster in the later steps (without considering the first one)
     # This affects reproducibility
     torch.backends.cudnn.benchmark = config.setup.benchmark_kernels
-
+    
     # Enables reproducibility across runs
-    enable_reproducibility(config.setup.seed, config.setup.ddp.rank)
-
-    init_ddp(config)
-
+    enable_reproducibility(config.setup.seed, config.setup.distributed.rank)
+    
+    init_ddp(config.setup)
+    
     try:
-        train(config)
+        ddp_main(config)
     finally:
         dist.destroy_process_group()
 
@@ -376,21 +385,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='simple distributed training job')
     parser.add_argument('--config_file', type=str, help='Path to config file')
     args = parser.parse_args()
-
+    
     # torchrun already handles setting up env variables and launching processes on the appropriate nodes, so we just call main
     main(args)
-
+    
     # TODO On using numactl with torchrun:
     # https://github.com/pytorch/pytorch/issues/115305#issuecomment-1845957682
     # https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/performance_tuning/tuning_guide.html#numactl
-
+    
     # Running single node:
     # torchrun --standalone --nproc-per-node=gpu train.py --config_file=res/config.yaml
     # --standalone: tells it is a single-machine setup
     # --nproc-per-node: num processes per node, can be a number, "gpu" which will create a process per gpu
     # train.py
     #   config_file: res/config.yaml
-
+    
     # Running multi-node:
     # We run the command in each node, specifying how many nodes in total and the global rank of the current node
     # We also need to set rendezvous arguments to allow them to synchronize and communicate
@@ -404,7 +413,7 @@ if __name__ == '__main__':
     #   the rendezvous backend is hosted here, so its best to choose the one with best bandwidth
     #   it should also be the same for all nodes
     # --max-restarts (optional): number of allowed failures or membership changes (details here: https://docs.pytorch.org/docs/stable/elastic/run.html#membership-changes)
-
+    
     # E.g. on SLURM enabled cluster, we can find master endpoint by:
     # export MASTER_ADDR=$(scontrol show hostname ${SLURM_NODELIST} | head -n 1)
     # Then we use that like:

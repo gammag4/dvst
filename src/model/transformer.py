@@ -52,9 +52,10 @@ class SelfAttn(nn.Module):
     def __init__(self, d_model, n_heads, use_qk_norm, qk_norm_eps, dropout, attn_op=None):
         super().__init__()
         
-        d_inner = d_model # TODO check with different inner_d_model later
-        
-        assert d_inner % n_heads == 0, f'n_heads should divide d_inner'
+        # TODO check with different inner_d_model later
+        d_inner = d_model
+        assert d_inner % n_heads == 0, f'n_heads should divide d_model'
+        # assert d_inner % n_heads == 0, f'n_heads should divide d_inner'
 
         self.use_qk_norm = use_qk_norm
         d_head = d_inner // n_heads
