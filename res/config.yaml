@@ -40,6 +40,9 @@ setup:
   # Device used in current process, computed in code
   #device: null
 
+  # Trainer object to run
+  trainer_constructor: [(obj), src.trainer.DVSTTrainer]
+
 train:
   optimizer:
     # Learning rate
@@ -47,7 +50,7 @@ train:
     # AdamW betas
     betas: [0.9, 0.95]
   total_epochs: 1
-  save_every_batches: 100
+  save_every_passes: 100
   checkpoint_folder_path: res/tmp/checkpoint/
   grad_clipping:
     # Whether to use gradient clipping
@@ -82,6 +85,7 @@ train:
     #   n_targets: null
     #   resize_to: [64, 114]
 
+# Default model configuration
 model:
   constructor: [(obj), src.model.DVST]
 
@@ -90,7 +94,8 @@ model:
   # Number of color channels in each frame
   C: 3
   # Number of octaves for representing each of the 6 components from plucker rays and the time component
-  # TODO change code to not use octaves/duplicate coordinates if n_oct = 1
+  # If null, uses raw values instead
+  # TODO change code to not use octaves/duplicate coordinates if n_oct = null
   n_oct: 6
 
   # Number of layers in transformer encoder
@@ -135,3 +140,13 @@ model:
     dropout: 0.1
     loss: [(obj), src.model.loss.PerceptualLoss, null]
     # loss: [(obj), torch.nn.MSELoss, null]
+
+# TODO
+# Experiments
+# Each experiment has a name and the properties that it will test, specifying for each either a list of possible values to test or "best" to choose the best value from last experiments
+# At each experiment, the default model will have the specified properties changed to each of the possible combinations for the given values
+# and, if specified, some properties will use the best values found in the last experiments (will error out if no best found before)
+experiments:
+  - name: Testing number of octaves for representations (n_oct)
+    model:
+      n_oct: [null, 3, 6, 12]

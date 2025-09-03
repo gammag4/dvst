@@ -1,280 +1,22 @@
 import os
 import random
 import datetime
-import gc
-from abc import ABC, abstractmethod
 
 import numpy as np
 import torch
-import torch.nn.functional as F
-from torch.utils.data import Dataset
-from torchdata.stateful_dataloader import StatefulDataLoader
 
-import torch.cuda
-import torch.multiprocessing as mp # Wrapper around python's native multiprocessing
-from torch.utils.data.distributed import DistributedSampler # Model that takes in data and distributes across GPUs
-from torch.nn.parallel import DistributedDataParallel as DDP # DDP wrapper
 import torch.distributed as dist
-import torch.amp as amp
 
 from src.config import load_config
-from src.datasets.full_dataset import FullDataset
-from src.utils import create_bound_function, get_num_params
 
 
-# Manages gradient scaling, skipping and batch retrying if skipped, and does gradient skipping even with GradScaler disabled
-class GradManager(amp.GradScaler):
-    # Gradient Scaler with batch retrying
-    def __init__(self, device, enabled, batch_retry_enabled, max_retries):
-        super().__init__(device=device, enabled=enabled)
-        self.batch_retry_enabled = batch_retry_enabled
-        self.max_retries = max_retries
-        self.should_retry_batch = False
-        self.num_retries = 0
-        self._skipped = False
-    
-    def update(self, new_scale = None):
-        old_scale = self.get_scale()
-        super().update(new_scale)
-        
-        # Checks whether current batch has been skipped due to inf/nan grads
-        # If the scale is smaller than before, it means that it updated its scale because of inf/nan grads
-        if self._enabled:
-            self._skipped = self.get_scale() < old_scale
-        
-        if self.batch_retry_enabled and self.num_retries < self.max_retries and self._skipped:
-            if self.should_retry_batch:
-                self.num_retries += 1
-            self.should_retry_batch = True
-        else:
-            self.num_retries = 0
-            self.should_retry_batch = False
-        self._skipped = False
-    
-    def step(self, optimizer, *args, **kwargs):
-        if(self._enabled):
-            return super().step(optimizer, *args, **kwargs)
-        
-        params = [p for pg in optimizer.param_groups for p in pg['params']]
-        should_step = True
-        for param in params:
-            if param.grad is not None:
-                if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
-                    should_step = False
-                    break
-        
-        if should_step:
-            return optimizer.step()
-        
-        self._skipped = True
-        return None
-    
-    def state_dict(self):
-        return {
-            'batch_retry_enabled': self.batch_retry_enabled,
-            'max_retries': self.max_retries,
-            'should_retry_batch': self.should_retry_batch,
-            'num_retries': self.num_retries,
-            '_skipped': self._skipped,
-            **super().state_dict()
-        }
-    
-    def load_state_dict(self, state_dict):
-        self.batch_retry_enabled = state_dict.pop('batch_retry_enabled')
-        self.max_retries = state_dict.pop('max_retries')
-        self.should_retry_batch = state_dict.pop('should_retry_batch')
-        self.num_retries = state_dict.pop('num_retries')
-        self._skipped = state_dict.pop('_skipped')
-        return super().load_state_dict(state_dict)
-
-
-class Trainer(ABC):
-    def __init__(
-        self,
-        model: torch.nn.Module,
-        train_data: StatefulDataLoader,
-        optimizer: torch.optim.Optimizer,
-        config
-    ) -> None:
-        self.device = config.setup.device
-        self.local_rank = config.setup.distributed.local_rank
-        self.rank = config.setup.distributed.rank
-        self.save_every_batches = config.train.save_every_batches
-        self.amp_enabled = config.setup.amp.enabled
-        self.amp_dtype = config.setup.amp.dtype
-        self.grad_clipping_enabled = config.train.grad_clipping.enabled
-        self.max_grad_norm = config.train.grad_clipping.max_norm
-        self.max_epochs = config.train.total_epochs
-        
-        self.model = model.to(self.device)
-        self.train_data = train_data
-        self.optimizer = optimizer
-        self.loss = []
-        
-        # We wrap the model with DDP, giving the GPU IDs where the model is (only in local_rank in this case)
-        # This also works for multi-GPU models, but in that case, device_ids and output_device must NOT be set,
-        # these should be sent to the proper devices by either the application or by model.forward()
-        self.model = DDP(self.model, device_ids=[self.local_rank])
-        
-        # Gradient scaler for AMP (probably not needed if using bfloat16)
-        self.grad_manager = GradManager(
-            device=self.device,
-            enabled=self.amp_enabled and config.setup.grad_manager.scaler.enabled,
-            batch_retry_enabled=config.setup.grad_manager.scaler.batch_retry.enabled,
-            max_retries=config.setup.grad_manager.scaler.batch_retry.max_retries,
-        )
-        
-        # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing checkpoint
-        # Starts from checkpoint if exists
-        self.current_epoch = 0
-        self.current_batch = 0
-        self.current_global_batch = 0
-        self.checkpoint_folder_path = config.train.checkpoint_folder_path
-        self.checkpoint_path = os.path.join(self.checkpoint_folder_path, 'checkpoint.pt')
-        os.makedirs(self.checkpoint_folder_path, exist_ok=True)
-        if os.path.exists(self.checkpoint_path):
-            print('Loading checkpoint')
-            self._load_checkpoint()
-        
-        get_num_params(self.model.module)
-    
-    def _load_checkpoint(self):
-        # Maps to the specific device
-        # This prevents processes from using others' devices (when set to accelerator:local_rank)
-        # TODO I put 'cpu' bc it seems like most people use that, need to check that
-        checkpoint = torch.load(self.checkpoint_path, map_location='cpu')
-        
-        self.model.load_state_dict(checkpoint['model'])
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
-        self.grad_manager.load_state_dict(checkpoint['grad_manager'])
-        self.train_data.load_state_dict(checkpoint['train_data'])
-        self.current_epoch = checkpoint['epochs_run']
-        self.current_batch = checkpoint['current_batch']
-        self.current_global_batch = checkpoint['current_global_batch']
-        
-        print(f'Resuming training from checkpoint | Epoch {self.current_epoch + 1}')
-    
-    def _save_checkpoint(self):
-        # We need .module to access model's parameters since it has been wrapped by DDP
-        checkpoint = {
-            'model': self.model.state_dict(),
-            'optimizer': self.optimizer.state_dict(),
-            'grad_manager': self.grad_manager.state_dict(),
-            'train_data': self.train_data.state_dict(),
-            'epochs_run': self.current_epoch,
-            'current_batch': self.current_batch,
-            'current_global_batch': self.current_global_batch,
-        }
-        
-        torch.save(checkpoint, self.checkpoint_path)
-        print(f'Saving training checkpoint at {self.checkpoint_path} | Epoch {self.current_epoch + 1}')
-    
-    def _load_extras(self):
-        pass
-    
-    def _save_extras(self):
-        pass
-    
-    def _try_save_new_batch(self):
-        self.current_global_batch += 1
-        
-        # Ensures only saves from first GPU to prevent redundancy
-        if self.rank == 0 and self.current_global_batch % self.save_every_batches == 0:
-            self._save_checkpoint()
-    
-    def _should_retry_batch(self):
-        return self.grad_manager.should_retry_batch
-    
-    # Use this function to run a batch for a generic model
-    def _run_batch(self, loss_constructor):
-        self.optimizer.zero_grad(set_to_none=True)
-        
-        # AMP: Casts operations to mixed precision
-        with amp.autocast(device_type=self.device, dtype=self.amp_dtype, enabled=self.amp_enabled):
-            # output.dtype is bfloat16 because linear layers autocast to bfloat16
-            # loss.dtype is float32 because mse_loss layers autocast to float32
-            loss = loss_constructor()
-            self.loss.append(loss.detach())
-        
-        # Exits autocast before backward()
-        # Backward passes under autocast are not recommended
-        # Backward ops run in the same dtype autocast chose for corresponding forward ops
-        
-        # Scales the loss, and calls backward()
-        # to create scaled gradients
-        self.grad_manager.scale(loss).backward() # Already called in model
-        
-        # All gradients are scaled in this region up to scaler.step(optimizer), so they need to be unscaled to be used
-        # Unscales the gradients of optimizer's assigned params in-place
-        self.grad_manager.unscale_(self.optimizer)
-        
-        # Gradient clipping
-        if self.grad_clipping_enabled:
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm) # TODO
-        
-        # Unscales gradients (if not unscaled before) and calls or skips optimizer.step()
-        # It skips if there are infs or NaNs in grads
-        # Since we called unscale_ before, it will not unscale gradients again
-        self.grad_manager.step(self.optimizer)
-        
-        # Updates the scale for next iteration
-        self.grad_manager.update()
-        
-        return self._should_retry_batch()
-    
-    def _run_epoch(self):
-        # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
-        # See: https://docs.pytorch.org/docs/stable/data.html
-        self.train_data.sampler.set_epoch(self.current_epoch + 1)
-        for item in self.train_data:
-            scene = item.load_scene(self.model.module.scene_batch_size, self.device)
-            
-            for i, scene_batch in enumerate(scene):
-                # TODO save each batch history at checkpoints too put to separate function
-                #   in same function also save latent_embeds data sum mean var add it explicitly in function as extra args
-                #   add everything and log it to a file
-                #   then visualize everything with a notebook
-                p_epoch = f'Epoch {self.current_epoch + 1}/{self.max_epochs}'
-                p_batch = f'; Scene: {self.current_batch + 1}/{len(self.train_data)}'
-                p_frame = f'; Frame: {i * scene.batch_size + 1}/{scene.n_frames}'
-                p_loss = f'; Losses: {[f'{l:.5f}' for l in self.loss]}' if len(self.loss) else ''
-                self.loss = []
-                print(f'[GPU{self.rank}] {p_epoch}{p_batch}{p_frame}{p_loss}')
-                
-                # TODO for now it is only splitting the scene in batches and considering each batch as a separate scene
-                # make it so that the gradients get computed for the entire scene and backpropagated by just computing everything until the end without gradients and then
-                # going back computing and propagating gradients at each batch (last batch, second last, ...)
-                
-                # TODO fix this abomination put in model
-                def run_batch():
-                    loss, _ = self.model.forward(scene_batch)
-                    return loss
-                # Batch retrying
-                while self._run_batch(run_batch):
-                    pass
-                
-                self._try_save_new_batch()
-            
-            # Saving up memory for next scene
-            del scene_batch
-            gc.collect()
-            #torch.cuda.empty_cache() # Not needed
-            
-            self.current_batch += 1
-    
-    def train(self):
-        for self.current_epoch in range(self.current_epoch, self.max_epochs):
-            self._run_epoch()
-            self.current_batch = 0
-
-
-def enable_reproducibility(seed, rank):
+def enable_reproducibility(config):
     # TODO this wont work if restarted
     
     # https://docs.pytorch.org/docs/stable/notes/randomness.html
     # https://discuss.pytorch.org/t/difference-between-torch-manual-seed-and-torch-cuda-manual-seed/13848
     
-    seed = seed + rank
+    seed = config.seed + config.distributed.rank
     os.environ['PYTHONHASHSEED'] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -286,7 +28,22 @@ def enable_reproducibility(seed, rank):
     # TODO check https://docs.pytorch.org/docs/stable/notes/randomness.html#dataloader
 
 
-def init_ddp(config):
+def setup_optimizations(config):
+    # Allows tf32 optimization (lower float32 precision with higher speed)
+    # This also sets torch.backends.cuda.matmul.allow_tf32, see note in https://docs.pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html
+    torch.set_float32_matmul_precision(config.tf32_level)
+    torch.backends.cudnn.allow_tf32 = config.tf32_level != 'highest'
+    
+    # Enable cuDNN auto-tuner
+    # Runs a short benchmark, chooses the best kernel on the first step and uses it in the next steps
+    # then the first step is slower but all other steps are faster
+    # the problem is that when you have a model that keeps changing at each nth iteration or where that input size changes, it becomes slower since it benchmarks again at every change
+    # a rule of thumb would be to run for some time with and without it and check which is faster in the later steps (without considering the first one)
+    # This affects reproducibility
+    torch.backends.cudnn.benchmark = config.benchmark_kernels
+
+
+def init_distributed(config):
     # Set num threads per process for OpenMP (used by DDP, see https://github.com/pytorch/pytorch/blob/65e6194aeb3269a182cfe2c05c122159da12770f/torch/distributed/run.py#L597-L608)
     # Should be set to num_cpu_threads / num_processes_per_node, that way you have that many threads for each process in the node
     os.environ['OMP_NUM_THREADS'] = str(config.distributed.num_threads)
@@ -304,78 +61,17 @@ def init_ddp(config):
     dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=config.distributed.timeout))
 
 
-def prepare_dataloader(dataset: Dataset, config):
-    # TODO check if this loader works with ddp. seems to work, but needs to check with multiple gpus
-    return StatefulDataLoader(
-        dataset,
-        batch_size=config.batch_size,
-        # Shuffle should be defined in sampler when using DistributedSampler
-        shuffle=False,
-        # Sampler that sends different batches to different gpus
-        sampler=DistributedSampler(dataset, shuffle=config.shuffle),
-        num_workers=config.num_workers,
-        prefetch_factor=config.prefetch_factor,
-        persistent_workers=False, # TODO check
-        pin_memory=True, # TODO check
-        drop_last=False, # TODO check
-    )
-
-
-def prepare_optimizer(model, config):
-    # Removing parameters that are not optimized
-    params = [p for p in model.parameters() if p.requires_grad]
-    
-    return torch.optim.AdamW(
-        params,
-        lr=config.lr,
-        betas=config.betas,
-        fused=True # TODO Some places report issues so check if this gives errors or nans
-    )
-
-
-def ddp_main(config):
-    # TODO fix downloaders code, get from cloud and also only download in one process per node
-    data_downloaders = config.train.data.downloaders
-    
-    for downloader in data_downloaders:
-        downloader.download()
-    
-    train_dataset = FullDataset(config.train.data.datasets)
-    train_data = prepare_dataloader(train_dataset, config.train.data.dataloader)
-    
-    model = config.model.constructor(config=config.model)
-    
-    optimizer = prepare_optimizer(model, config.train.optimizer)
-    
-    # We can also do a distributed evaluation by also using distributed sampler in the evaluation data
-    # test_data = prepare_dataloader(test_dataset, config.train.data)
-    trainer = Trainer(model, train_data, optimizer, config)
-    trainer.train()
-
-
 def main(args):
     config = load_config(args.config_file)
     
-    # Allows tf32 optimization (lower float32 precision with higher speed)
-    # This also sets torch.backends.cuda.matmul.allow_tf32, see note in https://docs.pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html
-    torch.set_float32_matmul_precision(config.setup.tf32_level)
-    torch.backends.cudnn.allow_tf32 = config.setup.tf32_level != 'highest'
+    enable_reproducibility(config.setup)
+    setup_optimizations(config.setup)
     
-    # Enable cuDNN auto-tuner
-    # Runs a short benchmark, chooses the best kernel on the first step and uses it in the next steps
-    # then the first step is slower but all other steps are faster
-    # the problem is that when you have a model that keeps changing at each nth iteration or where that input size changes, it becomes slower since it benchmarks again at every change
-    # a rule of thumb would be to run for some time with and without it and check which is faster in the later steps (without considering the first one)
-    # This affects reproducibility
-    torch.backends.cudnn.benchmark = config.setup.benchmark_kernels
-    
-    # Enables reproducibility across runs
-    enable_reproducibility(config.setup.seed, config.setup.distributed.rank)
-    
-    init_ddp(config.setup)
+    init_distributed(config.setup)
     
     try:
-        ddp_main(config)
+        trainer = config.setup.trainer_constructor(config)
+        trainer.run()
     finally:
         dist.destroy_process_group()
 
@@ -386,7 +82,7 @@ if __name__ == '__main__':
     parser.add_argument('--config_file', type=str, help='Path to config file')
     args = parser.parse_args()
     
-    # torchrun already handles setting up env variables and launching processes on the appropriate nodes, so we just call main
+    # torchrun already handles setting up env variables and launching processes on the appropriate nodes
     main(args)
     
     # TODO On using numactl with torchrun:
