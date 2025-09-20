@@ -1,10 +1,9 @@
 import math
-
 import torch
 import torch.nn as nn
 import einx
 
-from src.datasets.scene_dataset import View
+from src.dvst.datasets.scene_dataset import View
 from .transformer import Encoder
 
 

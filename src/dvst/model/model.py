@@ -1,11 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from easydict import EasyDict as edict
 
-from src.datasets.scene_dataset import Scene, View
-
+from src.dvst.datasets.scene_dataset import Scene, View
 from .pose_encoder import PoseEncoder
 from .encoder import DVSTEncoder
 from .decoder import DVSTDecoder

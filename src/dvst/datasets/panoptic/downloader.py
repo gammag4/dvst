@@ -1,19 +1,14 @@
-import json
 import asyncio
-import aiohttp
-from matplotlib import pyplot as plt
 import random
 import os
 import shutil
-from urllib.request import urlretrieve
-from urllib.error import HTTPError
 import progressbar
-from torchcodec.decoders import VideoDecoder
-
 from easydict import EasyDict as edict
 
-from src.utils import json_load, json_dump, json_get, try_run_cmd, ffmpeg_try_process_video, get_video_info
-from src.datasets.dataset_downloader import DatasetDownloader
+from src.base.utils import json_load, json_dump, json_get, text_get
+from src.base.datasets import DatasetDownloader
+
+from src.dvst.utils import ffmpeg_try_process_video, get_video_info
 
 
 class MyProgressBar():
@@ -47,12 +42,13 @@ async def run_batched(funcs, batch_size):
     return res
 
 
+# TODO either download to a shared file system (when distributed) or do lazy download only when using scene for training (but would do multiple requests one for each process so could have rate limiting)
 class PanopticDownloader(DatasetDownloader):
     # resize_to: Tuple with width and height to resize to. If None, does not resize, and if either width or height is -1, it resizes maintaining aspect ratio
     # n_scenes: num scenes to download (None means download all)
     # n_views: num hd views to download (None means download all)
     # Example: resize_to=(-1, 256) (resizes to height 256 maintaining aspect ratio), n_scenes=None (all), n_views=8 (8 hd) (max num hd vga kinect videos per scene)
-    def __init__(self, path, scene_names_file, use_cuda=True, cq_amount=23, resize_to=None, n_scenes=None, n_views=8, seed=42, use_snu_endpoint=False):
+    def __init__(self, path, use_cuda=True, cq_amount=23, resize_to=None, n_scenes=None, n_views=8, seed=42, use_snu_endpoint=False):
         super().__init__('panoptic', path)
         
         self.video_url = {
@@ -67,14 +63,14 @@ class PanopticDownloader(DatasetDownloader):
         self.n_scenes = n_scenes
         self.n_views = {'hd': n_views} # TODO change if you want to add other types of videos
         self.rand = random.Random(seed)
-        self.scene_names_file = scene_names_file
+        self.scene_names_url = 'https://raw.githubusercontent.com/CMU-Perceptual-Computing-Lab/panoptic-toolbox/246ebcfeeeab9d52fb4843b6698abe2d1a66c5e1/scripts/getDB_panoptic_ver1_2.sh'
         
         self.use_cuda = use_cuda
         self.cq_amount = cq_amount
     
-    def _get_scene_names(self, scene_names_file):
-        with open(scene_names_file, encoding='utf-8') as f:
-            return [i.strip() for i in f.readlines()]
+    async def _get_scene_names(self):
+        scene_names = await text_get(self.scene_names_url)
+        return list(set((i.split()[1] for i in scene_names.split('\n') if i.startswith('$curPath/getData.sh'))))
     
     async def _load_scene_data(self, name):
         print(f'Loading scene "{name}"')
@@ -92,7 +88,7 @@ class PanopticDownloader(DatasetDownloader):
         
         return name, url, calib_data, cameras
     
-    def _load_scenes_data(self):
+    async def _load_scenes_data(self):
         backup_path = os.path.join(self.path, 'full_data.json')
         
         try:
@@ -101,15 +97,15 @@ class PanopticDownloader(DatasetDownloader):
             pass
         
         batch_size = 3
-        scene_names = self._get_scene_names(self.scene_names_file)
-        scenes = asyncio.run(run_batched([(self._load_scene_data, [n]) for n in scene_names], batch_size))
+        scene_names = await self._get_scene_names()
+        scenes = await run_batched([(self._load_scene_data, [n]) for n in scene_names], batch_size)
         self.rand.shuffle(scenes)
         
         json_dump(backup_path, scenes)
         return scenes
     
     # TODO fix this abomination
-    def _download(self):
+    async def _download(self):
         backup_path = os.path.join(self.path, 'download_progress.json')
         
         try:
@@ -118,7 +114,7 @@ class PanopticDownloader(DatasetDownloader):
             curr_scene, curr_types, curr_type, curr_cam, downloaded_scenes, downloaded_scams, downloaded_views = 0, list(self.n_views.keys()), 0, 0, 0, [], 0
                 
         os.makedirs(self.path, exist_ok=True)
-        scenes = self._load_scenes_data()
+        scenes = await self._load_scenes_data()
         
         for curr_scene in range(curr_scene, len(scenes)):
             sname, surl, calib_data, scams = scenes[curr_scene]

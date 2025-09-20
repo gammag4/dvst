@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-from src.utils import create_bound_function
+from src.base.utils import create_bound_function
 
-from src.datasets.scene_dataset import Scene
+from src.dvst.datasets.scene_dataset import Scene
 from .transformer import Encoder
 
 

@@ -1,7 +1,7 @@
 import os
 
-from src.datasets.scene_dataset import VideoViewData, SceneData, SceneDataset
-from src.utils import json_load
+from src.dvst.datasets.scene_dataset import VideoViewData, SceneData, SceneDataset
+from src.base.utils import json_load
 
 class PanopticDataset(SceneDataset):
     def __init__(self, path, resize_to, n_sources, n_targets):

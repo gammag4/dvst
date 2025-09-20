@@ -1,11 +1,10 @@
 import os
-
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 from torchcodec.decoders import VideoDecoder
 
-from src.utils import colmap_poses_to_intrinsics_extrinsics
+from src.dvst.utils import colmap_poses_to_intrinsics_extrinsics
 
 
 # Download dataset from https://github.com/facebookresearch/Neural_3D_Video/releases

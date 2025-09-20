@@ -1,7 +1,5 @@
 from torch.utils.data import Dataset
 
-from easydict import EasyDict as edict
-
 
 class FullDataset(Dataset):
     def __init__(self, config):
