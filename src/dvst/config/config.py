@@ -4,11 +4,12 @@ from torch import Tensor
 from torch.nn import Module
 from xformers.ops.fmha import AttentionFwOpBase, AttentionBwOpBase
 
-from src.base.config import BaseDatasetConfig, BaseModelConfig, BaseOptimizerConfig
+
+from src.base.config import Config
 
 
 @dataclass
-class DVSTDatasetConfig(BaseDatasetConfig):
+class DVSTDatasetConfig:
     path: str
 
 
@@ -25,7 +26,7 @@ class ModelTrainConfig:
 
 
 @dataclass
-class DVSTModelConfig(BaseModelConfig):
+class DVSTModelConfig:
     p: int
     C: int
     n_oct: int
@@ -46,7 +47,10 @@ class DVSTModelConfig(BaseModelConfig):
 
 
 @dataclass
-class DVSTOptimizerConfig(BaseOptimizerConfig):
+class DVSTOptimizerConfig:
     lr: float
     betas: tuple[float, float]
     fused: bool
+
+
+DVSTConfig = Config[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig]

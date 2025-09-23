@@ -1,5 +1,6 @@
 import os
 from abc import ABC, abstractmethod
+from typing import Generic
 import torch
 from torch.utils.data import Dataset
 from torchdata.stateful_dataloader import StatefulDataLoader
@@ -9,22 +10,26 @@ import torch.distributed as dist
 import torch.amp as amp
 
 from src.base.utils import get_model_stats
-from src.base.config import Config
+from src.base.config import Config, TDatasetConfig, TModelConfig, TOptimizerConfig
 from src.base.datasets.provider import DatasetProvider
 from src.base.model.provider import ModelProvider
-from src.base.optimizer.provider import OptimizerProvider
+from src.base.optimizer.provider import OptimizerProvider, TModel
 
 from .grad_manager import GradManager
 from .runner import DistributedRunner
 
 
-class DistributedTrainer(DistributedRunner):
+class TrainerResult:
+    pass
+
+
+class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimizerConfig, TrainerResult], Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TModel]):
     def __init__(
         self,
-        config: Config,
-        dataset_provider: DatasetProvider,
-        model_provider: ModelProvider,
-        optimizer_provider: OptimizerProvider
+        config: Config[TDatasetConfig, TModelConfig, TOptimizerConfig],
+        dataset_provider: DatasetProvider[TDatasetConfig],
+        model_provider: ModelProvider[TModelConfig],
+        optimizer_provider: OptimizerProvider[TOptimizerConfig, TModel]
     ) -> None:
         super().__init__(config)
         self.dataset_provider = dataset_provider
@@ -181,6 +186,8 @@ class DistributedTrainer(DistributedRunner):
         for self.current_epoch in range(self.current_epoch, self.max_epochs):
             self._run_epoch()
             self.current_batch = 0
+        
+        return TrainerResult()
     
     async def _run(self):
         dataset_config = self.config.train.data.dataset

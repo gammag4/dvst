@@ -1,14 +1,14 @@
-import math
 import torch
 import torch.nn as nn
 import einx
 
 from src.dvst.datasets.scene_dataset import View
 from .transformer import Encoder
+from .pose_encoder import PoseEncoder
 
 
 class DVSTDecoder(nn.Module):
-    def __init__(self, config, pose_encoder):
+    def __init__(self, config, pose_encoder: PoseEncoder):
         super().__init__()
         
         self.config = config

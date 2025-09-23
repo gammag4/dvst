@@ -4,6 +4,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+from src.dvst.config import DVSTModelConfig
+
+
 def compute_pad(hw, p):
     # Pads the input so that it is divisible by 'p'
     # hw: (2,), p: (1)
@@ -59,7 +62,7 @@ def compute_octaves(v, n_oct, dim=-1):
 
 
 class PoseEncoder(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: DVSTModelConfig):
         super().__init__()
         self.config = config
         self.d_model = self.config.d_model

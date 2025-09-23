@@ -1,8 +1,6 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from easydict import EasyDict as edict
 
+from src.dvst.config import DVSTModelConfig
 from src.dvst.datasets.scene_dataset import Scene, View
 from .pose_encoder import PoseEncoder
 from .encoder import DVSTEncoder
@@ -14,7 +12,7 @@ class DVST(nn.Module):
     # not specified: H, W, C, N_{context}
     # n_heads should divide d_model
     # p should divide H and W (padding, cropping and resizing)
-    def __init__(self, config):
+    def __init__(self, config: DVSTModelConfig):
         super().__init__()
         
         self.config = config

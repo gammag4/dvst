@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass, field
+from typing import Generic, TypeVar
 from abc import ABC, abstractmethod
 import torch
 
@@ -84,9 +85,7 @@ class GradClippingConfig:
     max_norm: float
 
 
-@dataclass
-class BaseDatasetConfig(ABC):
-    pass
+TDatasetConfig = TypeVar('TDatasetConfig')
 
 
 @dataclass
@@ -99,33 +98,29 @@ class DataloaderConfig:
 
 
 @dataclass
-class DataConfig(ABC):
-    dataset: BaseDatasetConfig
+class DataConfig(ABC, Generic[TDatasetConfig]):
+    dataset: TDatasetConfig
     dataloader: DataloaderConfig
 
 
-@dataclass
-class BaseOptimizerConfig(ABC):
-    pass
+TOptimizerConfig = TypeVar('TOptimizerConfig')
 
 
 @dataclass
-class TrainConfig:
-    data: DataConfig
-    optimizer: BaseOptimizerConfig
+class TrainConfig(Generic[TDatasetConfig, TOptimizerConfig]):
+    data: DataConfig[TDatasetConfig]
+    optimizer: TOptimizerConfig
     total_epochs: int
     save_every_passes: int
     checkpoints_folder_path: str
     grad_clipping: GradClippingConfig
 
 
-@dataclass
-class BaseModelConfig(ABC):
-    pass
+TModelConfig = TypeVar('TModelConfig')
 
 
 @dataclass
-class Config:
-    model: BaseModelConfig
-    train: TrainConfig
+class Config(Generic[TDatasetConfig, TModelConfig, TOptimizerConfig]):
+    model: TModelConfig
+    train: TrainConfig[TDatasetConfig, TOptimizerConfig]
     setup: SetupConfig

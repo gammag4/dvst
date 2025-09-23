@@ -3,5 +3,6 @@ from .config import (
     QKNormConfig,
     ModelTrainConfig,
     DVSTModelConfig,
-    DVSTOptimizerConfig
+    DVSTOptimizerConfig,
+    DVSTConfig
 )

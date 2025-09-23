@@ -1,12 +1,12 @@
-from src.base.config import Config
 from src.base.providers import RunProvider
-from src.base.run import DistributedTrainer
 
+from src.dvst.config import *
+from src.dvst.model import DVST
 from .trainer import DVSTTrainer
 
 
-class DVSTRunProvider(RunProvider):
-    def create_trainer(self, config: Config) -> DistributedTrainer:
+class DVSTRunProvider(RunProvider[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVST]):
+    def create_trainer(self, config):
         return DVSTTrainer(
             config,
             dataset_provider=self.dataset_provider,

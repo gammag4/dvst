@@ -3,13 +3,15 @@ import torch.nn as nn
 
 from src.base.utils import create_bound_function
 
+from src.dvst.config import DVSTModelConfig
 from src.dvst.datasets.scene_dataset import Scene
 from .transformer import Encoder
+from .pose_encoder import PoseEncoder
 
 
 class DVSTEncoder(nn.Module):
     # latent_aggregator(next_frame_embeds, current_latent_embeds) creates next latent embeds from current embeds and next frame
-    def __init__(self, config, pose_encoder):
+    def __init__(self, config: DVSTModelConfig, pose_encoder: PoseEncoder):
         super().__init__()
         
         self.config = config

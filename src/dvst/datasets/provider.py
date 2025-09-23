@@ -1,8 +1,6 @@
 import os
-from typing import cast
 from torch.utils.data import Dataset
 
-from src.base.config import BaseDatasetConfig
 from src.base.datasets import FullDataset
 from src.base.providers import DatasetProvider
 
@@ -11,10 +9,8 @@ from .panoptic import PanopticDataset, PanopticDownloader
 from .plenoptic import RawPlenopticDataset
 
 
-class DVSTDatasetProvider(DatasetProvider):
-    async def download_dataset(self, config: BaseDatasetConfig):
-        config = cast(DVSTDatasetConfig, config)
-        
+class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
+    async def download_dataset(self, config):
         downloaders = [
             PanopticDownloader(
                 path=os.path.join(config.path, 'panoptic'),
@@ -29,9 +25,7 @@ class DVSTDatasetProvider(DatasetProvider):
         for d in downloaders:
             await d.download()
     
-    def _create_datasets(self, config: BaseDatasetConfig) -> Dataset:
-        config = cast(DVSTDatasetConfig, config)
-        
+    def _create_datasets(self, config):
         # TODO Add MultiShapeNet dataset https://srt-paper.github.io/#dataset
         # TODO Add RealEstate10K dataset processed by pixelsplat https://github.com/dcharatan/pixelsplat/blob/main/README.md#acquiring-datasets
         #   Original: google.github.io/realestate10k/download.html
@@ -51,11 +45,11 @@ class DVSTDatasetProvider(DatasetProvider):
         # TODO split dataset in a way where each distributed process receives roughly the same amount of batches
         return FullDataset(datasets)
     
-    def create_train_dataset(self, config: BaseDatasetConfig) -> Dataset:
+    def create_train_dataset(self, config):
         return self._create_datasets(config)
     
-    def create_val_dataset(self, config: BaseDatasetConfig) -> Dataset:
-        return [] # TODO
+    def create_val_dataset(self, config):
+        return FullDataset([]) # TODO
     
-    def create_test_dataset(self, config: BaseDatasetConfig) -> Dataset:
-        return [] # TODO
+    def create_test_dataset(self, config):
+        return FullDataset([]) # TODO

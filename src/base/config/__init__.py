@@ -6,11 +6,11 @@ from .config import (
     DistributedConfig,
     SetupConfig,
     GradClippingConfig,
-    BaseDatasetConfig,
+    TDatasetConfig,
     DataloaderConfig,
     DataConfig,
-    BaseOptimizerConfig,
+    TOptimizerConfig,
     TrainConfig,
-    BaseModelConfig,
+    TModelConfig,
     Config
 )

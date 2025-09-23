@@ -9,8 +9,8 @@ from src.dvst.model.loss import PerceptualLoss
 from src.dvst.model.latent_aggregators import residual_latent_aggregator
 
 
-class DVSTConfigProvider(ConfigProvider):
-    def create_default_config(self) -> Config:
+class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig]):
+    def create_default_config(self) -> DVSTConfig:
         return Config(
             # Configs for setting up train/eval environments
             setup=SetupConfig(

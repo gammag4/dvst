@@ -1,7 +1,9 @@
+from __future__ import annotations
 import math
 import random
 from torch.utils.data import Dataset
 from abc import ABC, abstractmethod
+from typing import Generic, TypeVar
 import torch
 from torchcodec.decoders import VideoDecoder
 import torchvision.transforms.v2.functional as v2f
@@ -11,7 +13,7 @@ import torchvision.transforms.v2.functional as v2f
 
 
 class _BatchedIterator:
-    def __init__(self, data):
+    def __init__(self, data: _BatchedData):
         self.data = data
         self.i = 0
     

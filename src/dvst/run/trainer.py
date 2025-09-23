@@ -3,10 +3,11 @@ from typing import cast
 
 from src.base.run import DistributedTrainer
 
+from src.dvst.config import *
 from src.dvst.model import DVST
 
 
-class DVSTTrainer(DistributedTrainer):
+class DVSTTrainer(DistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVST]):
     def _run_forward(self, *args):
         scene_batch, = args
         loss, _ = self.model(scene_batch)

@@ -2,15 +2,19 @@ import os
 import random
 import datetime
 from abc import ABC, abstractmethod
+from typing import Generic, TypeVar
 import numpy as np
 import torch
 import torch.distributed as dist
 
-from src.base.config import Config
+from src.base.config import Config, TDatasetConfig, TModelConfig, TOptimizerConfig
 
 
-class DistributedRunner(ABC):
-    def __init__(self, config: Config):
+TRunnerResult = TypeVar('TRunnerResult')
+
+
+class DistributedRunner(ABC, Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TRunnerResult]):
+    def __init__(self, config: Config[TDatasetConfig, TModelConfig, TOptimizerConfig]):
         self.config = config
     
     def _enable_reproducibility(self):
@@ -71,10 +75,10 @@ class DistributedRunner(ABC):
         dist.destroy_process_group()
     
     @abstractmethod
-    async def _run(self):
+    async def _run(self) -> TRunnerResult:
         pass
     
-    async def run(self):
+    async def run(self) -> TRunnerResult:
         self._enable_reproducibility()
         self._setup_optimizations()
         
