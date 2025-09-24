@@ -1,6 +1,6 @@
 import asyncio
 
-from src.base.providers import ConfigProvider, DatasetProvider, ModelProvider, OptimizerProvider, RunProvider
+from src.base.providers import ConfigProvider, DatasetProvider, ModelProvider, OptimizerProvider, RunProvider, LogProvider, PrintLogProvider
 
 from src.dvst.providers import DVSTConfigProvider, DVSTDatasetProvider, DVSTModelProvider, DVSTOptimizerProvider, DVSTRunProvider
 
@@ -9,6 +9,7 @@ async def main(
     dataset_provider: DatasetProvider,
     model_provider: ModelProvider,
     optimizer_provider: OptimizerProvider,
+    log_provider: LogProvider,
     run_provider: RunProvider
 ):
     config = config_provider.get_default_config()
@@ -22,12 +23,14 @@ if __name__ == '__main__':
     dataset_provider = DVSTDatasetProvider()
     model_provider = DVSTModelProvider()
     optimizer_provider = DVSTOptimizerProvider()
-    run_provider = DVSTRunProvider(dataset_provider, model_provider, optimizer_provider)
+    log_provider = PrintLogProvider()
+    run_provider = DVSTRunProvider(dataset_provider, model_provider, optimizer_provider, log_provider)
     asyncio.run(main(
         config_provider=config_provider,
         dataset_provider=dataset_provider,
         model_provider=model_provider,
         optimizer_provider=optimizer_provider,
+        log_provider=log_provider,
         run_provider=run_provider
     ))
     

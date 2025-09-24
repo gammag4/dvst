@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from typing import Generic
 import torch
@@ -8,6 +9,7 @@ from torch.utils.data.distributed import DistributedSampler # Model that takes i
 from torch.nn.parallel import DistributedDataParallel as DDP # DDP wrapper
 import torch.distributed as dist
 import torch.amp as amp
+from easydict import EasyDict as edict
 
 from src.base.utils import get_model_stats
 from src.base.config import Config, TDatasetConfig, TModelConfig, TOptimizerConfig
@@ -16,11 +18,13 @@ from src.base.model.provider import ModelProvider
 from src.base.optimizer.provider import OptimizerProvider, TModel
 
 from .grad_manager import GradManager
+from .log_provider import LogProvider
 from .runner import DistributedRunner
 
 
+@dataclass
 class TrainerResult:
-    pass
+    score: float
 
 
 class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimizerConfig, TrainerResult], Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TModel]):
@@ -29,12 +33,14 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         config: Config[TDatasetConfig, TModelConfig, TOptimizerConfig],
         dataset_provider: DatasetProvider[TDatasetConfig],
         model_provider: ModelProvider[TModelConfig],
-        optimizer_provider: OptimizerProvider[TOptimizerConfig, TModel]
+        optimizer_provider: OptimizerProvider[TOptimizerConfig, TModel],
+        log_provider: LogProvider
     ) -> None:
         super().__init__(config)
         self.dataset_provider = dataset_provider
         self.model_provider = model_provider
         self.optimizer_provider = optimizer_provider
+        self.log_provider = log_provider
         
         self.device = config.setup.distributed.device
         self.local_rank = config.setup.distributed.local_rank
@@ -44,10 +50,15 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.grad_clipping_config = config.train.grad_clipping
         self.max_epochs = config.train.total_epochs
     
-    def print_current_state(self, extras=''):
-        epoch = f'Epoch {self.current_epoch + 1}/{self.max_epochs}'
-        batch = f'; Batch: {self.current_batch + 1}/{len(self.train_data)}'
-        print(f'[GPU{self.rank}] {epoch}{batch}{extras}')
+    # TODO remove
+    def get_current_state(self):
+        state = edict()
+        state.gpu = f'{self.rank}'
+        state.epoch = f'{self.current_epoch + 1}/{self.max_epochs}'
+        state.batch = f'{self.current_batch + 1}/{len(self.train_data)}'
+        state.frame = f'{self.current_scene_frame + 1}/{self.current_scene_n_frames}'
+        
+        return state
     
     def _load_checkpoint(self):
         # Maps to the specific device
@@ -58,6 +69,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.model.load_state_dict(checkpoint['model'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.grad_manager.load_state_dict(checkpoint['grad_manager'])
+        self.logger.load_state_dict(checkpoint['logger'])
         self.train_data.load_state_dict(checkpoint['train_data'])
         self.current_epoch = checkpoint['current_epoch']
         self.current_batch = checkpoint['current_batch']
@@ -71,6 +83,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             'model': self.model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'grad_manager': self.grad_manager.state_dict(),
+            'logger': self.logger.state_dict(),
             'train_data': self.train_data.state_dict(),
             'current_epoch': self.current_epoch,
             'current_batch': self.current_batch,
@@ -104,7 +117,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             drop_last=False, # TODO check
         )
     
-    def _try_save_new_pass(self):
+    def _try_checkpoint(self):
         self.current_global_pass += 1
         
         # Ensures only saves from first GPU to prevent redundancy
@@ -120,6 +133,9 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
     def _run_forward(self, *args):
         pass
     
+    def _val(self):
+        pass # TODO
+    
     # Use this function to run a batch for a generic model
     def _run_pass_once(self, *args):
         self.optimizer.zero_grad(set_to_none=True)
@@ -129,7 +145,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             # output.dtype is bfloat16 because linear layers autocast to bfloat16
             # loss.dtype is float32 because mse_loss layers autocast to float32
             loss = self._run_forward(*args)
-            self.loss.append(loss.detach())
         
         # Exits autocast before backward()
         # Backward passes under autocast are not recommended
@@ -157,8 +172,14 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         
         should_retry = self._should_retry_pass()
         if not should_retry:
-            self._try_save_new_pass()
-
+            self.current_train_loss = float(loss.detach())
+            self.logger.log({'loss': self.current_train_loss})
+            
+            self.logger.display_current()
+            self.logger.update()
+            
+            self._try_checkpoint()
+        
         return should_retry
     
     # Use this method to run one forward/backward pass for a generic model
@@ -178,16 +199,23 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # See: https://docs.pytorch.org/docs/stable/data.html
         self.train_data.sampler.set_epoch(self.current_epoch)
         for batch in self.train_data:
-            self.print_current_state()
+            self.logger.log({'batch': self.current_batch})
+            
             self._run_dataset_batch(batch)
             self.current_batch += 1
     
     def _train(self):
+        self.logger.log({'gpu': self.rank})
+        
         for self.current_epoch in range(self.current_epoch, self.max_epochs):
+            self.logger.log({'epoch': self.current_epoch})
+            
             self._run_epoch()
             self.current_batch = 0
         
-        return TrainerResult()
+        return TrainerResult(
+            score=0.0 # TODO
+        )
     
     async def _run(self):
         dataset_config = self.config.train.data.dataset
@@ -198,7 +226,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.train_data = self._create_dataloader(train_data)
         
         val_data = self.dataset_provider.create_val_dataset(dataset_config)
-        self.val_data = self._create_dataloader(val_data) # TODO
+        self.val_data = self._create_dataloader(val_data)
         
         model = self.model_provider.create_model(self.config.model)
         self.optimizer = self.optimizer_provider.create_optimizer(self.config.train.optimizer, model)
@@ -208,7 +236,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # these should be sent to the proper devices by either the application or by model.forward()
         self.model = DDP(model.to(self.device), device_ids=[self.local_rank])
         
-        self.loss = []
+        self.logger = self.log_provider.create_logger()
         
         # Gradient scaler for AMP (probably not needed if using bfloat16)
         self.grad_manager = GradManager(
@@ -223,6 +251,8 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.current_epoch = 0
         self.current_batch = 0
         self.current_global_pass = 0
+        self.current_train_loss = float('inf')
+        self.current_val_loss = float('inf')
         self.checkpoints_folder_path = self.config.train.checkpoints_folder_path
         self.checkpoint_path = os.path.join(self.checkpoints_folder_path, 'checkpoint.pt')
         os.makedirs(self.checkpoints_folder_path, exist_ok=True)
@@ -233,3 +263,12 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         get_model_stats(self.model.module)
         
         return self._train()
+
+
+class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig, TOptimizerConfig, TModel]):
+    def _run_forward(self, *args):
+        loss = self.model(*args)
+        return loss
+
+    def _run_dataset_batch(self, batch):
+        self._run_pass(batch)

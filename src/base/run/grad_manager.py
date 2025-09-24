@@ -55,7 +55,7 @@ class GradManager(amp.GradScaler):
             'max_retries': self.max_retries,
             'should_retry_batch': self.should_retry_batch,
             'num_retries': self.num_retries,
-            '_skipped': self._skipped,
+            'skipped': self._skipped,
             **super().state_dict()
         }
     
@@ -64,5 +64,5 @@ class GradManager(amp.GradScaler):
         self.max_retries = state_dict.pop('max_retries')
         self.should_retry_batch = state_dict.pop('should_retry_batch')
         self.num_retries = state_dict.pop('num_retries')
-        self._skipped = state_dict.pop('_skipped')
+        self._skipped = state_dict.pop('skipped')
         return super().load_state_dict(state_dict)

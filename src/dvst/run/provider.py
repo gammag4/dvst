@@ -11,5 +11,6 @@ class DVSTRunProvider(RunProvider[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimi
             config,
             dataset_provider=self.dataset_provider,
             model_provider=self.model_provider,
-            optimizer_provider=self.optimizer_provider
+            optimizer_provider=self.optimizer_provider,
+            log_provider=self.log_provider
         )

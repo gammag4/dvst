@@ -1,3 +1,4 @@
 from .grad_manager import GradManager
 from .runner import DistributedRunner, TRunnerResult
-from .trainer import DistributedTrainer
+from .logger import Logger, PrintLogger
+from .trainer import DistributedTrainer, DefaultDistributedTrainer, TrainerResult
