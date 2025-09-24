@@ -270,7 +270,7 @@ class VideoViewData(AbstractViewData):
 # This may either be an entire scene or just one batch
 # Iterating over it iterates over its batches
 class Scene(_BatchedData):
-    def __init__(self, views: list[View], n_frames, batch_size, sources_idx, queries_targets_idx=[], start=None, end=None):
+    def __init__(self, scene_id: str, views: list[View], n_frames, batch_size, sources_idx, queries_targets_idx=[], start=None, end=None):
         super().__init__(batch_size)
         # Sources is the list of source views that will be used to create latent representation of scene
         # Queries is a list of frame queries (pose + time frame) to be retrieved
@@ -283,6 +283,7 @@ class Scene(_BatchedData):
         self._queries = None
         self._targets = None
         
+        self.scene_id = scene_id
         self.n_frames = n_frames
         
         self.start = 0 if start is None else start
@@ -315,6 +316,7 @@ class Scene(_BatchedData):
     
     def get_slice(self, start, end):
         return Scene(
+            self.scene_id,
             [v.get_slice(start, end) for v in self._views],
             end - start,
             self.batch_size,
@@ -324,7 +326,8 @@ class Scene(_BatchedData):
 
 
 class SceneData:
-    def __init__(self, view_datas: list[AbstractViewData], n_frames, sources_idx, queries_targets_idx):
+    def __init__(self, dataset_name, scene_name, view_datas: list[AbstractViewData], n_frames, sources_idx, queries_targets_idx):
+        self.scene_id = f'{dataset_name}/{scene_name}'
         self.view_datas = view_datas
         self.n_frames = n_frames
         self.sources_idx = sources_idx
@@ -332,6 +335,7 @@ class SceneData:
     
     def load_scene(self, batch_size, device):
         return Scene(
+            self.scene_id,
             [v.load_view(batch_size, device) for v in self.view_datas],
             self.n_frames,
             batch_size,
@@ -341,7 +345,7 @@ class SceneData:
     
     # If n_sources or n_targets are None, all videos are chosen as sources/targets respectively
     @staticmethod
-    def from_sources_targets_split(view_datas: list[AbstractViewData], n_frames, n_sources, n_targets, shuffle, shuffle_before_splitting):
+    def from_sources_targets_split(dataset_name, scene_name, view_datas: list[AbstractViewData], n_frames, n_sources, n_targets, shuffle, shuffle_before_splitting):
         if shuffle and shuffle_before_splitting:
             random.shuffle(view_datas)
         
@@ -353,6 +357,8 @@ class SceneData:
             random.shuffle(queries_targets_idx)
         
         return SceneData(
+            dataset_name,
+            scene_name,
             view_datas,
             n_frames,
             sources_idx,

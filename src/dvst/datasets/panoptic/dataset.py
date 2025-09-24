@@ -30,12 +30,14 @@ class PanopticDataset(SceneDataset):
             ) for v in data.views]
             
             scene = SceneData.from_sources_targets_split(
-                view_datas,
-                data.n_frames,
-                n_sources,
-                n_targets,
-                True,
-                True
+                dataset_name='panoptic',
+                scene_name=sname,
+                view_datas=view_datas,
+                n_frames=data.n_frames,
+                n_sources=n_sources,
+                n_targets=n_targets,
+                shuffle=True,
+                shuffle_before_splitting=True
             )
             
             scenes.append(scene)
