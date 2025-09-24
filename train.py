@@ -11,7 +11,7 @@ async def main(
     optimizer_provider: OptimizerProvider,
     run_provider: RunProvider
 ):
-    config = config_provider.create_default_config()
+    config = config_provider.get_default_config()
     trainer = run_provider.create_trainer(config)
     await trainer.run()
 
