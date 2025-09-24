@@ -6,7 +6,6 @@ from src.base.providers import DatasetProvider
 
 from src.dvst.config import DVSTDatasetConfig
 from .panoptic import PanopticDataset, PanopticDownloader
-from .plenoptic import RawPlenopticDataset
 
 
 class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
