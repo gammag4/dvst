@@ -1,11 +1,42 @@
+import os
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 import json
 import subprocess
 import aiohttp
 from easydict import EasyDict as edict
 
 
+class _SafeOpenWrite:
+    def __init__(self, path, mode='w+b', encoding='utf-8'):
+        self.path = Path(path)
+        os.makedirs(self.path.parent, exist_ok=True)
+        self.file = NamedTemporaryFile(mode=mode, encoding=encoding, dir=self.path.parent, prefix=self.path.name, suffix='.tmp', delete=False)
+    
+    def __enter__(self):
+        return self.file
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            self.file.flush()
+            os.fsync(self.file.fileno())
+            self.file.close()
+            os.replace(self.file.name, self.path)
+        except:
+            try:
+                os.remove(self.file.name)
+            except:
+                pass
+
+        return False
+
+
+def safe_open_write(path, mode='w+b', encoding='utf-8'):
+    return _SafeOpenWrite(path, mode, encoding)
+
+
 def json_load(path, use_edict=True):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, mode='r', encoding='utf-8') as f:
         res = json.load(f)
         if use_edict:
             if type(res) is list:
@@ -17,7 +48,7 @@ def json_load(path, use_edict=True):
 
 
 def json_dump(path, data: edict | dict):
-    with open(path, 'w', encoding='utf-8') as f:
+    with safe_open_write(path, mode='w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, sort_keys=True)
 
 

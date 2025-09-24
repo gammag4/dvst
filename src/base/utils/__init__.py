@@ -1,7 +1,7 @@
 import math
 
 
-from .io import json_load, json_dump, json_get, text_get, try_run_cmd
+from .io import safe_open_write, json_load, json_dump, json_get, text_get, try_run_cmd
 from .visualization import get_camera_geometry
 
 
