@@ -60,27 +60,19 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         
         return state
     
-    def _load_checkpoint(self):
-        # Maps to the specific device
-        # This prevents processes from using others' devices (when set to accelerator:local_rank)
-        # TODO I put 'cpu' bc it seems like most people use that, need to check that
-        checkpoint = torch.load(self.checkpoint_path, map_location='cpu')
-        
-        self.model.load_state_dict(checkpoint['model'])
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
-        self.grad_manager.load_state_dict(checkpoint['grad_manager'])
-        self.logger.load_state_dict(checkpoint['logger'])
-        self.train_data.load_state_dict(checkpoint['train_data'])
-        self.current_epoch = checkpoint['current_epoch']
-        self.current_batch = checkpoint['current_batch']
-        self.current_global_pass = checkpoint['current_global_pass']
-        
-        print(f'Resuming training from checkpoint | Epoch {self.current_epoch + 1}')
+    def load_state_dict(self, state_dict):
+        self.model.module.load_state_dict(state_dict['model'])
+        self.optimizer.load_state_dict(state_dict['optimizer'])
+        self.grad_manager.load_state_dict(state_dict['grad_manager'])
+        self.logger.load_state_dict(state_dict['logger'])
+        self.train_data.load_state_dict(state_dict['train_data'])
+        self.current_epoch = state_dict['current_epoch']
+        self.current_batch = state_dict['current_batch']
+        self.current_global_pass = state_dict['current_global_pass']
     
-    def _save_checkpoint(self):
-        # We need .module to access model's parameters since it has been wrapped by DDP
-        checkpoint = {
-            'model': self.model.state_dict(),
+    def state_dict(self):
+        state = {
+            'model': self.model.module.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'grad_manager': self.grad_manager.state_dict(),
             'logger': self.logger.state_dict(),
@@ -90,8 +82,19 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             'current_global_pass': self.current_global_pass,
         }
         
-        torch.save(checkpoint, self.checkpoint_path)
-        print(f'Saving training checkpoint at {self.checkpoint_path} | Epoch {self.current_epoch + 1}')
+        return state
+    
+    def _load_checkpoint(self):
+        # Maps to the specific device
+        # This prevents processes from using others' devices (when set to accelerator:local_rank)
+        # TODO I put 'cpu' bc it seems like most people use that, need to check that
+        self.load_state_dict(torch.load(self.checkpoint_path, map_location='cpu'))
+        
+        print(f'Resuming training from checkpoint at {self.checkpoint_path}')
+    
+    def _save_checkpoint(self):
+        torch.save(self.state_dict(), self.checkpoint_path)
+        print(f'Saving training checkpoint at {self.checkpoint_path}')
     
     def _load_extras(self):
         pass
