@@ -14,6 +14,6 @@ omegaconf
 easydict
 imageio
 opencv
-open3d=0.18
+open3d==0.18
 #chromadb
 -r requirements-torch.txt
