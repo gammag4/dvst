@@ -24,6 +24,8 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         
         scene = batch.load_scene(model.scene_batch_size, self.device)
         
+        self.logger.log({'scene_id': scene.scene_id})
+        
         for i, scene_batch in enumerate(scene):
             # TODO save each batch history at checkpoints too put to separate function
             #   in same function also save latent_embeds data sum mean var add it explicitly in function as extra args
