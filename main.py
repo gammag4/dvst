@@ -41,7 +41,7 @@ if __name__ == '__main__':
     # https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/performance_tuning/tuning_guide.html#numactl
     
     # Running single node:
-    # torchrun --standalone --nproc-per-node=gpu train.py
+    # torchrun --standalone --nproc-per-node=gpu main.py
     # --standalone: tells it is a single-machine setup
     # --nproc-per-node: num processes per node, can be a number, "gpu" which will create a process per gpu
     # train.py
