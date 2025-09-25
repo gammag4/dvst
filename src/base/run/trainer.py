@@ -205,20 +205,20 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
     def _run_dataset_batch(self, batch):
         pass
     
+    # This method is called in each epoch with self.current_epoch as its epoch number
+    # It should call self._run_dataset_batch(batch) for each batch from the dataset
+    @abstractmethod
     def _run_epoch(self):
-        # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
-        # See: https://docs.pytorch.org/docs/stable/data.html
-        self.train_data.sampler.set_epoch(self.current_epoch)
-        for batch in self.train_data:
-            self.logger.log({'batch': self.current_batch})
-            
-            self._run_dataset_batch(batch)
-            self.current_batch += 1
+        pass
     
     def _train(self):
         self.logger.log({'gpu': self.rank})
         
         for self.current_epoch in range(self.current_epoch, self.max_epochs):
+            # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
+            # See: https://docs.pytorch.org/docs/stable/data.html
+            self.train_data.sampler.set_epoch(self.current_epoch)
+            
             self.logger.log({'epoch': self.current_epoch})
             
             self._run_epoch()
@@ -282,6 +282,13 @@ class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig,
     def _run_forward(self, *args):
         loss = self.model(*args)
         return loss
-
+    
     def _run_dataset_batch(self, batch):
         self._run_pass(batch)
+    
+    def _run_epoch(self):
+        for batch in self.train_data:
+            self.logger.log({'batch': self.current_batch})
+            
+            self._run_dataset_batch(batch)
+            self.current_batch += 1

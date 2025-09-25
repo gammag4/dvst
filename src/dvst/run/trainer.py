@@ -1,13 +1,13 @@
 import gc
 from typing import cast
 
-from src.base.run import DistributedTrainer
+from src.base.run import DefaultDistributedTrainer
 
 from src.dvst.config import *
 from src.dvst.model import DVST
 
 
-class DVSTTrainer(DistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVST]):
+class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVST]):
     def __init__(self, config, dataset_provider, model_provider, optimizer_provider, log_provider):
         super().__init__(config, dataset_provider, model_provider, optimizer_provider, log_provider)
         
