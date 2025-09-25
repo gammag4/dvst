@@ -19,6 +19,7 @@ from src.base.optimizer.provider import OptimizerProvider, TModel
 
 from .grad_manager import GradManager
 from .log_provider import LogProvider
+from .timer import Timer
 from .runner import DistributedRunner
 
 
@@ -65,6 +66,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.optimizer.load_state_dict(state_dict['optimizer'])
         self.grad_manager.load_state_dict(state_dict['grad_manager'])
         self.logger.load_state_dict(state_dict['logger'])
+        self.timer.load_state_dict(state_dict['timer'])
         self.train_data.load_state_dict(state_dict['train_data'])
         self.current_epoch = state_dict['current_epoch']
         self.current_batch = state_dict['current_batch']
@@ -76,6 +78,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             'optimizer': self.optimizer.state_dict(),
             'grad_manager': self.grad_manager.state_dict(),
             'logger': self.logger.state_dict(),
+            'timer': self.timer.state_dict(),
             'train_data': self.train_data.state_dict(),
             'current_epoch': self.current_epoch,
             'current_batch': self.current_batch,
@@ -176,7 +179,12 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         should_retry = self._should_retry_pass()
         if not should_retry:
             self.current_train_loss = float(loss.detach())
-            self.logger.log({'loss': self.current_train_loss})
+            self.timer.update()
+
+            self.logger.log({
+                'loss': self.current_train_loss,
+                'avg_delta_time': self.timer.avg_delta
+            })
             
             self.logger.display_current()
             self.logger.update()
@@ -240,6 +248,8 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.model = DDP(model.to(self.device), device_ids=[self.local_rank])
         
         self.logger = self.log_provider.create_logger()
+        
+        self.timer = Timer()
         
         # Gradient scaler for AMP (probably not needed if using bfloat16)
         self.grad_manager = GradManager(
