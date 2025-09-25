@@ -1,5 +1,5 @@
 import torch
-from xformers.ops.fmha import MemoryEfficientAttentionFlashAttentionOp
+from xformers.ops.fmha import MemoryEfficientAttentionFlashAttentionOp, MemoryEfficientAttentionCutlassOp
 
 from src.base.config import *
 from src.base.providers import ConfigProvider
@@ -26,7 +26,7 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 # Sets precision for float32 operations in CUDA matmul and cuDNN convolutions
                 # 'highest' disables tf32
                 # 'high' and 'medium' enable tf32
-                tf32_level='high',
+                tf32_level='medium',
                 # Automatic mixed precision config
                 amp=AmpConfig(
                     # Enables/disables AMP
@@ -71,7 +71,7 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
             ),
             train=TrainConfig(
                 # Total number of epochs to run
-                total_epochs=1,
+                total_epochs=20,
                 # Save after every n passes (forward/backward pass)
                 save_every_passes=100,
                 checkpoints_folder_path='res/tmp/checkpoint/',
@@ -97,7 +97,7 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 ),
                 optimizer=DVSTOptimizerConfig(
                     # Learning rate
-                    lr=1e-4,
+                    lr=1e-3,
                     # AdamW betas
                     betas=(0.9, 0.95),
                     # TODO Some places report issues so check if this gives errors or nans
@@ -142,7 +142,7 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 # TODO How many frames to break scenes into (use if using input scenes that are too big)
                 # When using this, after the specified number of frames, the latent_embedding has its grad graph removed and becomes a leaf tensor
                 #   Its gradients are not propagated back to the start_latent_embeds parameter, but this saves memory
-                scene_batch_size=1,
+                scene_batch_size=6,
                 
                 # frames_per_scene is the size of the batches that the videos will be broken into to create scenes
                 #   TODO this was from the old idea of breaking scene into smaller batches of 3
@@ -157,7 +157,7 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                     # TODO test separate dropouts for each layer
                     dropout=0.1,
                     # Loss function to use
-                    #loss=torch.nn.MSELoss()
+                    # loss=torch.nn.MSELoss()
                     loss=PerceptualLoss()
                 )
             )
