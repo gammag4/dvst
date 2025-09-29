@@ -44,7 +44,7 @@ class _BatchedData(ABC):
     
     @property
     def n_batches(self):
-        return math.ceil(self._n_items / self.batch_size)
+        return 1 if self.batch_size is None else math.ceil(self._n_items / self.batch_size)
     
     @abstractmethod
     def get_slice(self, start, end):
