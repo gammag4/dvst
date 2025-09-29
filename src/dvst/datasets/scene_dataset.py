@@ -327,7 +327,7 @@ class Scene(_BatchedData):
 
 class SceneData:
     def __init__(self, dataset_name, scene_name, view_datas: list[AbstractViewData], n_frames, sources_idx, queries_targets_idx):
-        self.scene_id = f'{dataset_name}/{scene_name}'
+        self.scene_id = f'{dataset_name}_{scene_name}'
         self.view_datas = view_datas
         self.n_frames = n_frames
         self.sources_idx = sources_idx
