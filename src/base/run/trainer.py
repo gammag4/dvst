@@ -61,6 +61,24 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         
         return state
     
+    def _create_dataloader(self, dataset: Dataset):
+        config = self.config.train.data.dataloader
+        
+        # TODO check if this loader works with ddp. seems to work, but needs to check with multiple gpus
+        return StatefulDataLoader(
+            dataset,
+            batch_size=config.batch_size,
+            # Shuffle should be defined in sampler when using DistributedSampler
+            shuffle=False,
+            # Sampler that sends different batches to different gpus
+            sampler=DistributedSampler(dataset, shuffle=config.shuffle),
+            num_workers=config.num_workers,
+            prefetch_factor=config.prefetch_factor,
+            persistent_workers=False, # TODO check
+            pin_memory=config.pin_memory, # TODO check
+            drop_last=False, # TODO check
+        )
+    
     def load_state_dict(self, state_dict):
         self.model.module.load_state_dict(state_dict['model'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
@@ -87,48 +105,30 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         
         return state
     
-    def _load_checkpoint(self):
+    def _try_load_checkpoint(self):
+        os.makedirs(self.checkpoints_folder_path, exist_ok=True)
+        checkpoints = os.listdir(self.checkpoints_folder_path)
+        if len(checkpoints) == 0:
+            return
+        
+        last_checkpoint = max(checkpoints, key=lambda x: int(x.split('.')[0]))
+        checkpoint_path = os.path.join(self.checkpoints_folder_path, last_checkpoint)
+        
         # Maps to the specific device
         # This prevents processes from using others' devices (when set to accelerator:local_rank)
         # TODO I put 'cpu' bc it seems like most people use that, need to check that
-        self.load_state_dict(torch.load(self.checkpoint_path, map_location='cpu'))
+        self.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
+        print(f'Resuming training from checkpoint at {checkpoint_path}')
+    
+    def _try_save_checkpoint(self):
+        checkpoint_path = os.path.join(self.checkpoints_folder_path, f'{self.logger.iteration}.pt')
         
-        print(f'Resuming training from checkpoint at {self.checkpoint_path}')
-    
-    def _save_checkpoint(self):
-        torch.save(self.state_dict(), self.checkpoint_path)
-        print(f'Saving training checkpoint at {self.checkpoint_path}')
-    
-    def _load_extras(self):
-        pass
-    
-    def _save_extras(self):
-        pass
-    
-    def _create_dataloader(self, dataset: Dataset):
-        config = self.config.train.data.dataloader
-        
-        # TODO check if this loader works with ddp. seems to work, but needs to check with multiple gpus
-        return StatefulDataLoader(
-            dataset,
-            batch_size=config.batch_size,
-            # Shuffle should be defined in sampler when using DistributedSampler
-            shuffle=False,
-            # Sampler that sends different batches to different gpus
-            sampler=DistributedSampler(dataset, shuffle=config.shuffle),
-            num_workers=config.num_workers,
-            prefetch_factor=config.prefetch_factor,
-            persistent_workers=False, # TODO check
-            pin_memory=config.pin_memory, # TODO check
-            drop_last=False, # TODO check
-        )
-    
-    def _try_checkpoint(self):
         self.current_global_pass += 1
         
         # Ensures only saves from first GPU to prevent redundancy
         if self.rank == 0 and self.current_global_pass % self.config.train.save_every_passes == 0:
-            self._save_checkpoint()
+            torch.save(self.state_dict(), checkpoint_path)
+            print(f'Saving training checkpoint at {checkpoint_path}')
     
     def _should_retry_pass(self):
         return self.grad_manager.should_retry_batch
@@ -189,7 +189,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             self.logger.display_current()
             self.logger.update()
             
-            self._try_checkpoint()
+            self._try_save_checkpoint()
         
         return should_retry
     
@@ -267,11 +267,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.current_train_loss = float('inf')
         self.current_val_loss = float('inf')
         self.checkpoints_folder_path = self.config.train.checkpoints_folder_path
-        self.checkpoint_path = os.path.join(self.checkpoints_folder_path, 'checkpoint.pt')
-        os.makedirs(self.checkpoints_folder_path, exist_ok=True)
-        if os.path.exists(self.checkpoint_path):
-            print('Loading checkpoint')
-            self._load_checkpoint()
+        self._try_load_checkpoint()
         
         get_model_stats(self.model.module)
         
@@ -282,6 +278,14 @@ class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig,
     def _run_forward(self, *args):
         loss = self.model(*args)
         return loss
+    
+    # Override to save more stuff in checkpoints
+    def state_dict(self):
+        return super().state_dict()
+
+    # Override to save more stuff in checkpoints
+    def load_state_dict(self, state_dict):
+        return super().load_state_dict(state_dict)
     
     def _run_dataset_batch(self, batch):
         self._run_pass(batch)
