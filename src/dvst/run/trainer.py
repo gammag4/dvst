@@ -14,6 +14,18 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         self.current_scene_frame = None
         self.current_scene_n_frames = None
     
+    def state_dict(self):
+        state_dict = super().state_dict()
+        
+        state_dict['last_frames'] = self.last_frames
+        
+        return state_dict
+    
+    def load_state_dict(self, state_dict):
+        self.last_frames = state_dict['last_frames']
+        
+        super().load_state_dict(state_dict)
+    
     def _run_forward(self, *args):
         scene_batch, = args
         latent_embeds = None # TODO
