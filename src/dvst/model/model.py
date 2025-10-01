@@ -1,4 +1,5 @@
 import torch.nn as nn
+from typing import Callable
 
 from src.dvst.config import DVSTModelConfig
 from src.dvst.datasets.scene_dataset import Scene, View
@@ -12,7 +13,7 @@ class DVST(nn.Module):
     # not specified: H, W, C, N_{context}
     # n_heads should divide d_model
     # p should divide H and W (padding, cropping and resizing)
-    def __init__(self, config: DVSTModelConfig):
+    def __init__(self, config: DVSTModelConfig, loss: Callable | None = None):
         super().__init__()
         
         self.config = config
@@ -22,14 +23,13 @@ class DVST(nn.Module):
         self.encoder = DVSTEncoder(self.config, self.pose_encoder)
         self.decoder = DVSTDecoder(self.config, self.pose_encoder)
         
-        self.loss = config.train.loss
+        self.loss = loss # TODO check if eval mode or loss is none in forward
     
     @property
     def start_latent_embeds(self):
         return self.encoder.start_latent_embeds
     
-    def create_scene_latents(self, scene: Scene):
-        latent_embeds = None
+    def create_scene_latents(self, scene: Scene, latent_embeds = None):
         latent_embeds = self.encoder(scene, latent_embeds)
         return latent_embeds
     
@@ -39,7 +39,7 @@ class DVST(nn.Module):
     def forward(self, scene: Scene, latent_embeds=None):
         loss = 0.
         
-        latent_embeds = self.encoder(scene, latent_embeds)
+        latent_embeds = self.create_scene_latents(scene, latent_embeds)
         
         # TODO fix so that the loss starts from the beginning of the scene (queries/targets)
         for query, target in zip(scene.queries, scene.targets):
@@ -48,4 +48,6 @@ class DVST(nn.Module):
             l = self.loss(frames, target.view) / query.shape[0]
             loss = loss + l
         
-        return loss, latent_embeds
+        last_frames = {'gen': frames, 'target': target.view}
+        
+        return loss, latent_embeds, last_frames

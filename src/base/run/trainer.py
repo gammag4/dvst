@@ -12,10 +12,11 @@ import torch.amp as amp
 from easydict import EasyDict as edict
 
 from src.base.utils import get_model_stats
-from src.base.config import Config, TDatasetConfig, TModelConfig, TOptimizerConfig
+from src.base.config import Config, TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig
 from src.base.datasets.provider import DatasetProvider
 from src.base.model.provider import ModelProvider
 from src.base.optimizer.provider import OptimizerProvider, TModel
+from src.base.loss.provider import LossProvider
 
 from .grad_manager import GradManager
 from .log_provider import LogProvider
@@ -28,19 +29,21 @@ class TrainerResult:
     score: float
 
 
-class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimizerConfig, TrainerResult], Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TModel]):
+class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TrainerResult], Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TModel]):
     def __init__(
         self,
-        config: Config[TDatasetConfig, TModelConfig, TOptimizerConfig],
+        config: Config[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig],
         dataset_provider: DatasetProvider[TDatasetConfig],
         model_provider: ModelProvider[TModelConfig],
         optimizer_provider: OptimizerProvider[TOptimizerConfig, TModel],
+        loss_provider: LossProvider[TLossConfig],
         log_provider: LogProvider
     ) -> None:
         super().__init__(config)
         self.dataset_provider = dataset_provider
         self.model_provider = model_provider
         self.optimizer_provider = optimizer_provider
+        self.loss_provider = loss_provider
         self.log_provider = log_provider
         
         self.device = config.setup.distributed.device
@@ -135,6 +138,8 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
     
     # This method is automatically called by self._run_pass() and should not be called by the user
     # It receives the same *args sent to self._run_pass() by self._run_dataset_batch() and should do one forward pass, returning the loss of that pass
+    # This method also has to call ddp model forward, can't call model.module functions directly
+    # See https://discuss.pytorch.org/t/is-it-ok-to-use-methods-other-than-forward-in-ddp/176509
     @abstractmethod
     def _run_forward(self, *args):
         pass
@@ -239,7 +244,8 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         val_data = self.dataset_provider.create_val_dataset(dataset_config)
         self.val_data = self._create_dataloader(val_data)
         
-        model = self.model_provider.create_model(self.config.model)
+        loss = self.loss_provider.create_loss(self.config.train.loss)
+        model = self.model_provider.create_model(self.config.model, loss)
         self.optimizer = self.optimizer_provider.create_optimizer(self.config.train.optimizer, model)
         
         # We wrap the model with DDP, giving the GPU IDs where the model is (only in local_rank in this case)
@@ -269,15 +275,16 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.checkpoints_folder_path = self.config.train.checkpoints_folder_path
         self._try_load_checkpoint()
         
-        get_model_stats(self.model.module)
+        get_model_stats(self.model)
         
         return self._train()
 
 
-class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig, TOptimizerConfig, TModel]):
+class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TModel]):
     def _run_forward(self, *args):
-        loss = self.model(*args)
-        return loss
+        x, y = args
+        res = self.model(x)
+        return self.loss(res, y)
     
     # Override to save more stuff in checkpoints
     def state_dict(self):

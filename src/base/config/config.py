@@ -106,10 +106,14 @@ class DataConfig(ABC, Generic[TDatasetConfig]):
 TOptimizerConfig = TypeVar('TOptimizerConfig')
 
 
+TLossConfig = TypeVar('TLossConfig')
+
+
 @dataclass
-class TrainConfig(Generic[TDatasetConfig, TOptimizerConfig]):
+class TrainConfig(Generic[TDatasetConfig, TOptimizerConfig, TLossConfig]):
     data: DataConfig[TDatasetConfig]
     optimizer: TOptimizerConfig
+    loss: TLossConfig
     total_epochs: int
     save_every_passes: int
     checkpoints_folder_path: str
@@ -120,7 +124,7 @@ TModelConfig = TypeVar('TModelConfig')
 
 
 @dataclass
-class Config(Generic[TDatasetConfig, TModelConfig, TOptimizerConfig]):
+class Config(Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig]):
     model: TModelConfig
-    train: TrainConfig[TDatasetConfig, TOptimizerConfig]
+    train: TrainConfig[TDatasetConfig, TOptimizerConfig, TLossConfig]
     setup: SetupConfig

@@ -22,7 +22,6 @@ class QKNormConfig:
 @dataclass
 class ModelTrainConfig:
     dropout: float
-    loss: Callable
 
 
 @dataclass
@@ -53,4 +52,9 @@ class DVSTOptimizerConfig:
     fused: bool
 
 
-DVSTConfig = Config[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig]
+@dataclass
+class DVSTLossConfig:
+    pass
+
+
+DVSTConfig = Config[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVSTLossConfig]

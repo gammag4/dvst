@@ -7,16 +7,18 @@ from src.dvst.config import *
 from src.dvst.model import DVST
 
 
-class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVST]):
-    def __init__(self, config, dataset_provider, model_provider, optimizer_provider, log_provider):
-        super().__init__(config, dataset_provider, model_provider, optimizer_provider, log_provider)
+class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVSTLossConfig, DVST]):
+    def __init__(self, config, dataset_provider, model_provider, optimizer_provider, loss_provider, log_provider):
+        super().__init__(config, dataset_provider, model_provider, optimizer_provider, loss_provider, log_provider)
         
         self.current_scene_frame = None
         self.current_scene_n_frames = None
     
     def _run_forward(self, *args):
         scene_batch, = args
-        loss, _ = self.model(scene_batch)
+        latent_embeds = None # TODO
+        loss, latent_embeds, self.last_frames = self.model(scene_batch, latent_embeds)
+        
         return loss
     
     def _run_dataset_batch(self, batch):

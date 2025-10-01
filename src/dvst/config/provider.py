@@ -5,11 +5,10 @@ from src.base.config import *
 from src.base.providers import ConfigProvider
 
 from .config import *
-from src.dvst.model.loss import PerceptualLoss
 from src.dvst.model.latent_aggregators import residual_latent_aggregator
 
 
-class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig]):
+class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVSTLossConfig]):
     def __init__(self):
         super().__init__()
     
@@ -102,6 +101,9 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                     betas=(0.9, 0.95),
                     # TODO Some places report issues so check if this gives errors or nans
                     fused=True
+                ),
+                loss=DVSTLossConfig(
+                    # No loss configs yet
                 )
             ),
             model=DVSTModelConfig(
@@ -155,10 +157,7 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 train=ModelTrainConfig(
                     # Dropout rate
                     # TODO test separate dropouts for each layer
-                    dropout=0.1,
-                    # Loss function to use
-                    #loss=torch.nn.MSELoss()
-                    loss=PerceptualLoss()
+                    dropout=0.1
                 )
             )
         )

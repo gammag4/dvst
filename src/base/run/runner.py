@@ -7,14 +7,14 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
-from src.base.config import Config, TDatasetConfig, TModelConfig, TOptimizerConfig
+from src.base.config import Config, TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig
 
 
 TRunnerResult = TypeVar('TRunnerResult')
 
 
-class DistributedRunner(ABC, Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TRunnerResult]):
-    def __init__(self, config: Config[TDatasetConfig, TModelConfig, TOptimizerConfig]):
+class DistributedRunner(ABC, Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TRunnerResult]):
+    def __init__(self, config: Config[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig]):
         self.config = config
     
     def _enable_reproducibility(self):

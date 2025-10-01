@@ -5,5 +5,5 @@ from .model import DVST
 
 
 class DVSTModelProvider(ModelProvider[DVSTModelConfig]):
-    def create_model(self, config):
-        return DVST(config)
+    def create_model(self, config, loss):
+        return DVST(config, loss)

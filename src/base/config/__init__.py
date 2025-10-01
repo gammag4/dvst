@@ -10,6 +10,7 @@ from .config import (
     DataloaderConfig,
     DataConfig,
     TOptimizerConfig,
+    TLossConfig,
     TrainConfig,
     TModelConfig,
     Config
