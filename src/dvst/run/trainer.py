@@ -1,5 +1,4 @@
 import gc
-from typing import cast
 
 from src.base.run import DefaultDistributedTrainer
 
@@ -34,9 +33,7 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         return loss
     
     def _run_dataset_batch(self, batch):
-        model = cast(DVST, self.model.module)
-        
-        scene = batch.load_scene(model.scene_batch_size, self.device)
+        scene = batch.load_scene(self.base_model.scene_batch_size, self.device)
         
         self.logger.log({'scene_id': scene.scene_id})
         

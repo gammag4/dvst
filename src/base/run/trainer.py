@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
-from typing import Generic
+from typing import Generic, cast
 import torch
 from torch.utils.data import Dataset
 from torchdata.stateful_dataloader import StatefulDataLoader
@@ -54,6 +54,10 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.grad_clipping_config = config.train.grad_clipping
         self.max_epochs = config.train.total_epochs
     
+    @property
+    def base_model(self):
+        return cast(TModel, self.model.module)
+    
     # TODO remove
     def get_current_state(self):
         state = edict()
@@ -83,7 +87,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         )
     
     def load_state_dict(self, state_dict):
-        self.model.module.load_state_dict(state_dict['model'])
+        self.base_model.load_state_dict(state_dict['base_model'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
         self.grad_manager.load_state_dict(state_dict['grad_manager'])
         self.logger.load_state_dict(state_dict['logger'])
@@ -95,7 +99,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
     
     def state_dict(self):
         state = {
-            'model': self.model.module.state_dict(),
+            'base_model': self.base_model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'grad_manager': self.grad_manager.state_dict(),
             'logger': self.logger.state_dict(),
