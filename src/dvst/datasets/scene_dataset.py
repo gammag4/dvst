@@ -383,3 +383,28 @@ class SceneDataset(ABC, Dataset[SceneData]):
     @abstractmethod
     def n_scenes(self):
         pass
+
+
+# TODO maybe decouple this into simple collection for generic datasets?
+class CollectionSceneDataset(SceneDataset):
+    def __init__(self, datasets: list[SceneDataset]):
+        self.datasets = datasets
+    
+    @property
+    def n_frames(self):
+        return sum((d.n_frames for d in self.datasets))
+    
+    @property
+    def n_scenes(self):
+        return sum((d.n_scenes for d in self.datasets))
+    
+    def __len__(self):
+        return sum((len(d) for d in self.datasets))
+    
+    def __getitem__(self, i):
+        for d in self.datasets:
+            l = len(d)
+            if i < l:
+                return d[i]
+            
+            i -= l

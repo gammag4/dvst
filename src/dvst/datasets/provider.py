@@ -1,7 +1,7 @@
 import os
 from torch.utils.data import Dataset
 
-from src.base.datasets import FullDataset
+from src.dvst.datasets.scene_dataset import CollectionSceneDataset
 from src.base.providers import DatasetProvider
 
 from src.dvst.config import DVSTDatasetConfig
@@ -42,13 +42,13 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
         ]
         
         # TODO split dataset in a way where each distributed process receives roughly the same amount of batches
-        return FullDataset(datasets)
+        return CollectionSceneDataset(datasets)
     
     def create_train_dataset(self, config):
         return self._create_datasets(config)
     
     def create_val_dataset(self, config):
-        return FullDataset([]) # TODO
+        return CollectionSceneDataset([]) # TODO
     
     def create_test_dataset(self, config):
-        return FullDataset([]) # TODO
+        return CollectionSceneDataset([]) # TODO

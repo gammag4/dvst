@@ -1,7 +1,9 @@
 import gc
+from typing import cast
 
 from src.base.run import DefaultDistributedTrainer
 
+from src.dvst.datasets.scene_dataset import SceneDataset
 from src.dvst.config import *
 from src.dvst.model import DVST
 
@@ -12,6 +14,18 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         
         self.current_scene_frame = None
         self.current_scene_n_frames = None
+    
+    @property
+    def n_train_steps(self):
+        dataset = cast(SceneDataset, self.train_data.dataset)
+        
+        return dataset.n_frames // self.base_model.scene_batch_size # TODO
+    
+    @property
+    def n_val_steps(self):
+        dataset = cast(SceneDataset, self.val_data.dataset)
+        
+        return dataset.n_frames // self.base_model.scene_batch_size # TODO
     
     def state_dict(self):
         state_dict = super().state_dict()

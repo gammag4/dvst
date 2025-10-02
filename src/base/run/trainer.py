@@ -1,4 +1,5 @@
 import os
+import datetime
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from typing import Generic, cast
@@ -57,6 +58,21 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
     @property
     def base_model(self):
         return cast(TModel, self.model.module)
+    
+    @property
+    @abstractmethod
+    def n_train_steps(self):
+        pass
+    
+    @property
+    @abstractmethod
+    def n_val_steps(self):
+        pass
+    
+    @property
+    def total_steps(self):
+        # TODO add val dataset
+        return self.n_train_steps
     
     # TODO remove
     def get_current_state(self):
@@ -192,7 +208,8 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
 
             self.logger.log({
                 'loss': self.current_train_loss,
-                'avg_delta_time': self.timer.avg_delta
+                'avg_delta_time': self.timer.avg_delta,
+                'eta': str(datetime.timedelta(seconds=self.timer.eta))
             })
             
             self.logger.display_current()
@@ -259,7 +276,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         
         self.logger = self.log_provider.create_logger()
         
-        self.timer = Timer()
+        self.timer = Timer(self.total_steps)
         
         # Gradient scaler for AMP (probably not needed if using bfloat16)
         self.grad_manager = GradManager(
@@ -285,6 +302,14 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
 
 
 class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TModel]):
+    @property
+    def n_train_steps(self):
+        return len(self.train_data)
+    
+    @property
+    def n_val_steps(self):
+        return len(self.val_data)
+    
     def _run_forward(self, *args):
         x, y = args
         res = self.model(x)
