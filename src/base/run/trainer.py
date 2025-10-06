@@ -10,7 +10,6 @@ from torch.utils.data.distributed import DistributedSampler # Model that takes i
 from torch.nn.parallel import DistributedDataParallel as DDP # DDP wrapper
 import torch.distributed as dist
 import torch.amp as amp
-from easydict import EasyDict as edict
 
 from src.base.utils import get_model_stats
 from src.base.config import Config, TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig
@@ -20,7 +19,8 @@ from src.base.optimizer.provider import OptimizerProvider, TModel
 from src.base.loss.provider import LossProvider
 
 from .grad_manager import GradManager
-from .log_provider import LogProvider
+from .logging import Stateful
+from .logging.providers import LogProvider
 from .timer import Timer
 from .runner import DistributedRunner
 
@@ -30,7 +30,7 @@ class TrainerResult:
     score: float
 
 
-class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TrainerResult], Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TModel]):
+class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TrainerResult], Stateful, Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TModel]):
     def __init__(
         self,
         config: Config[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig],
@@ -74,16 +74,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # TODO add val dataset
         return self.n_train_steps
     
-    # TODO remove
-    def get_current_state(self):
-        state = edict()
-        state.gpu = f'{self.rank}'
-        state.epoch = f'{self.current_epoch + 1}/{self.max_epochs}'
-        state.batch = f'{self.current_batch + 1}/{len(self.train_data)}'
-        state.frame = f'{self.current_scene_frame + 1}/{self.current_scene_n_frames}'
-        
-        return state
-    
     def _create_dataloader(self, dataset: Dataset):
         config = self.config.train.data.dataloader
         
@@ -102,31 +92,35 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             drop_last=False, # TODO check
         )
     
-    def load_state_dict(self, state_dict):
-        self.base_model.load_state_dict(state_dict['base_model'])
-        self.optimizer.load_state_dict(state_dict['optimizer'])
-        self.grad_manager.load_state_dict(state_dict['grad_manager'])
-        self.logger.load_state_dict(state_dict['logger'])
-        self.timer.load_state_dict(state_dict['timer'])
-        self.train_data.load_state_dict(state_dict['train_data'])
-        self.current_epoch = state_dict['current_epoch']
-        self.current_batch = state_dict['current_batch']
-        self.current_global_pass = state_dict['current_global_pass']
+    def load_default_state(self):
+        self.current_epoch = 0
+        self.current_global_pass = 0
     
     def state_dict(self):
-        state = {
+        state_dict = {
+            'train_data': self.train_data.state_dict(),
+            'val_data': self.val_data.state_dict(),
             'base_model': self.base_model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'grad_manager': self.grad_manager.state_dict(),
             'logger': self.logger.state_dict(),
             'timer': self.timer.state_dict(),
-            'train_data': self.train_data.state_dict(),
             'current_epoch': self.current_epoch,
-            'current_batch': self.current_batch,
             'current_global_pass': self.current_global_pass,
         }
         
-        return state
+        return state_dict
+    
+    def load_state_dict(self, state_dict):
+        self.train_data.load_state_dict(state_dict['train_data'])
+        self.val_data.load_state_dict(state_dict['val_data'])
+        self.base_model.load_state_dict(state_dict['base_model'])
+        self.optimizer.load_state_dict(state_dict['optimizer'])
+        self.grad_manager.load_state_dict(state_dict['grad_manager'])
+        self.logger.load_state_dict(state_dict['logger'])
+        self.timer.load_state_dict(state_dict['timer'])
+        self.current_epoch = state_dict['current_epoch']
+        self.current_global_pass = state_dict['current_global_pass']
     
     def _try_load_checkpoint(self):
         config = self.config.train.checkpoints
@@ -134,6 +128,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         os.makedirs(config.folder_path, exist_ok=True)
         checkpoints = os.listdir(config.folder_path)
         if len(checkpoints) == 0:
+            self.load_default_state()
             return
         
         last_checkpoint = max(checkpoints, key=lambda x: int(x.split('.')[0]))
@@ -142,8 +137,9 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # Maps to the specific device
         # This prevents processes from using others' devices (when set to accelerator:local_rank)
         # TODO I put 'cpu' bc it seems like most people use that, need to check that
-        self.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
-        print(f'Resuming training from checkpoint at {checkpoint_path}')
+        # TODO weights_only=False only for trusted
+        self.load_state_dict(torch.load(checkpoint_path, map_location='cpu', weights_only=config.weights_only))
+        self.logger.message(f'Resuming training from checkpoint at {checkpoint_path}')
     
     def _try_save_checkpoint(self):
         config = self.config.train.checkpoints
@@ -155,7 +151,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # Ensures only saves from first GPU to prevent redundancy
         if self.rank == 0 and self.current_global_pass % self.config.train.save_every_passes == 0:
             torch.save(self.state_dict(), checkpoint_path)
-            print(f'Saving training checkpoint at {checkpoint_path}')
+            self.logger.message(f'Saving training checkpoint at {checkpoint_path}')
     
     def _should_retry_pass(self):
         return self.grad_manager.should_retry_batch
@@ -205,29 +201,30 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # Updates the scale for next iteration
         self.grad_manager.update()
         
-        should_retry = self._should_retry_pass()
-        if not should_retry:
-            self.current_train_loss = float(loss.detach())
-            self.timer.update()
+        self.logger.log({'loss', float(loss.detach())})
+    
+    # This method is run after each pass to update stuff
+    def _step(self):
+        self.timer.update()
 
-            self.logger.log({
-                'loss': self.current_train_loss,
-                'avg_delta_time': self.timer.avg_delta,
-                'eta': str(datetime.timedelta(seconds=self.timer.eta))
-            })
-            
-            self.logger.display_current()
-            self.logger.update()
-            
-            self._try_save_checkpoint()
+        self.logger.log({
+            'avg_delta_time': self.timer.avg_delta,
+            'eta': str(datetime.timedelta(seconds=self.timer.eta))
+        })
         
-        return should_retry
+        self.logger.display_current()
+        self.logger.update()
     
     # Use this method to run one forward/backward pass for a generic model
     def _run_pass(self, *args):
         # Batch retrying
-        while self._run_pass_once(*args):
-            pass
+        while True:
+            self._run_pass_once(*args)
+            if not self._should_retry_pass():
+                break
+        
+        self._step()
+        self._try_save_checkpoint()
     
     # This method receives one batch directly from the dataset and should train the model with it, should not be called by the used
     # It needs to call self._run_pass() for each training pass it needs to run (forward and backward), where *args will be the args it will pass down to self._run_forward() when calling it
@@ -252,7 +249,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             self.logger.log({'epoch': self.current_epoch})
             
             self._run_epoch()
-            self.current_batch = 0
         
         return TrainerResult(
             score=0.0 # TODO
@@ -278,10 +274,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # these should be sent to the proper devices by either the application or by model.forward()
         self.model = DDP(model.to(self.device), device_ids=[self.local_rank])
         
-        self.logger = self.log_provider.create_logger()
-        
-        self.timer = Timer(self.total_steps)
-        
         # Gradient scaler for AMP (probably not needed if using bfloat16)
         self.grad_manager = GradManager(
             device=self.device,
@@ -290,14 +282,12 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             max_retries=self.grad_scaler_config.batch_retry.max_retries,
         )
         
+        self.logger = self.log_provider.create_logger()
+        
+        self.timer = Timer(self.total_steps)
+        
         # When using torchrun, we need load and save checkpoint logic because when any of the processes fail, torchrun restarts all of them at the last existing checkpoint
         # Starts from checkpoint if exists
-        self.current_epoch = 0
-        self.current_batch = 0
-        self.current_global_pass = 0
-        self.current_train_loss = float('inf')
-        self.current_val_loss = float('inf')
-        self.checkpoints_folder_path = self.config.train.checkpoints_folder_path
         self._try_load_checkpoint()
         
         get_model_stats(self.model)
@@ -319,13 +309,24 @@ class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig,
         res = self.model(x)
         return self.loss(res, y)
     
+    def load_default_state(self):
+        super().load_default_state()
+        
+        self.current_batch = 0
+    
     # Override to save more stuff in checkpoints
     def state_dict(self):
-        return super().state_dict()
-
+        state_dict = super().state_dict()
+        
+        state_dict['current_batch'] = self.current_batch
+        
+        return state_dict
+    
     # Override to save more stuff in checkpoints
     def load_state_dict(self, state_dict):
-        return super().load_state_dict(state_dict)
+        super().load_state_dict(state_dict)
+        
+        self.current_batch = state_dict['current_batch']
     
     def _run_dataset_batch(self, batch):
         self._run_pass(batch)
@@ -336,3 +337,5 @@ class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig,
             
             self._run_dataset_batch(batch)
             self.current_batch += 1
+        
+        self.current_batch = 0

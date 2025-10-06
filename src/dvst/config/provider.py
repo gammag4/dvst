@@ -76,6 +76,8 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 checkpoints=CheckpointsConfig(
                     # Folder in which to save checkpoints
                     folder_path='res/tmp/checkpoint/',
+                    # Whether to load only weights, should be false only for checkpoints from trusted sources
+                    weights_only=False
                 ),
                 # Gradient clipping config
                 grad_clipping=GradClippingConfig(

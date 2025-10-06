@@ -6,7 +6,7 @@ from src.base.datasets.provider import DatasetProvider
 from src.base.model.provider import ModelProvider
 from src.base.optimizer.provider import OptimizerProvider, TModel
 from src.base.loss.provider import LossProvider
-from .log_provider import LogProvider
+from .logging.providers import LogProvider
 from .trainer import DistributedTrainer
 
 class RunProvider(ABC, Generic[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TModel]):

@@ -9,12 +9,6 @@ from src.dvst.model import DVST
 
 
 class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVSTLossConfig, DVST]):
-    def __init__(self, config, dataset_provider, model_provider, optimizer_provider, loss_provider, log_provider):
-        super().__init__(config, dataset_provider, model_provider, optimizer_provider, loss_provider, log_provider)
-        
-        self.current_scene_frame = None
-        self.current_scene_n_frames = None
-    
     @property
     def n_train_steps(self):
         dataset = cast(SceneDataset, self.train_data.dataset)
@@ -27,17 +21,25 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         
         return dataset.n_frames // self.base_model.scene_batch_size # TODO
     
+    def load_default_state(self):
+        super().load_default_state()
+        
+        self.current_scene_frame = 0
+        self.last_frames = None
+    
     def state_dict(self):
         state_dict = super().state_dict()
         
+        state_dict['current_scene_frame'] = self.current_scene_frame
         state_dict['last_frames'] = self.last_frames
         
         return state_dict
     
     def load_state_dict(self, state_dict):
-        self.last_frames = state_dict['last_frames']
-        
         super().load_state_dict(state_dict)
+        
+        self.current_scene_frame = state_dict['current_scene_frame']
+        self.last_frames = state_dict['last_frames']
     
     def _run_forward(self, *args):
         scene_batch, = args
@@ -46,19 +48,21 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         
         return loss
     
+    def _step(self):
+        self.current_scene_frame += self.current_scene_batch_size
+    
     def _run_dataset_batch(self, batch):
         scene = batch.load_scene(self.base_model.scene_batch_size, self.device)
         
+        self.current_scene_batch_size = scene.batch_size
+        
         self.logger.log({'scene_id': scene.scene_id})
         
-        for i, scene_batch in enumerate(scene):
+        for scene_batch in scene:
             # TODO save each batch history at checkpoints too put to separate function
             #   in same function also save latent_embeds data sum mean var add it explicitly in function as extra args
             #   add everything and log it to a file
             #   then visualize everything with a notebook
-            
-            self.current_scene_frame = i * scene.batch_size
-            self.current_scene_n_frames = scene.n_frames
             
             self.logger.log({'frame': self.current_scene_frame})
             
@@ -68,8 +72,7 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
             
             self._run_pass(scene_batch)
         
-        self.current_scene_frame = None
-        self.current_scene_n_frames = None
+        self.current_scene_frame = 0
         
         # TODO ???
         # Saving up memory for next scene

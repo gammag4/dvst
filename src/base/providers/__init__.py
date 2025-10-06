@@ -4,4 +4,4 @@ from src.base.model.provider import ModelProvider
 from src.base.optimizer.provider import OptimizerProvider, TModel
 from src.base.loss.provider import LossProvider
 from src.base.run.run_provider import RunProvider
-from src.base.run.log_provider import LogProvider, PrintLogProvider
+from src.base.run.logging.providers import LogProvider, PrintLogProvider

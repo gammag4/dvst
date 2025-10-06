@@ -1,12 +1,11 @@
+import os
 from abc import ABC, abstractmethod
+import torch
 
-from .logger import Logger, PrintLogger
+from .logging import Logger, PrintLogger, Stateful
 
 
 class LogProvider(ABC):
-    def __init__(self):
-        pass
-    
     @abstractmethod
     def create_logger(self) -> Logger:
         pass

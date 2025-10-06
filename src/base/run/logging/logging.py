@@ -23,6 +23,10 @@ class Logger(ABC):
         self.vars = {**self.vars, **vars}
     
     @abstractmethod
+    def message(self, msg):
+        pass
+    
+    @abstractmethod
     def display_current(self):
         pass
     
@@ -42,5 +46,22 @@ class Logger(ABC):
 
 
 class PrintLogger(Logger):
+    def message(self, msg):
+        print(msg)
+    
     def display_current(self):
         print(self.vars)
+
+
+class Stateful(ABC):
+    @abstractmethod
+    def load_default_state(self):
+        pass
+    
+    @abstractmethod
+    def state_dict(self) -> dict:
+        pass
+    
+    @abstractmethod
+    def load_state_dict(self, state: dict):
+        pass
