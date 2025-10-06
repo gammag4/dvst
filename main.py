@@ -1,14 +1,15 @@
 import asyncio
 
-from src.base.providers import ConfigProvider, DatasetProvider, ModelProvider, OptimizerProvider, RunProvider, LogProvider, PrintLogProvider
+from src.base.providers import ConfigProvider, DatasetProvider, ModelProvider, OptimizerProvider, LossProvider, RunProvider, LogProvider, PrintLogProvider
 
-from src.dvst.providers import DVSTConfigProvider, DVSTDatasetProvider, DVSTModelProvider, DVSTOptimizerProvider, DVSTRunProvider
+from src.dvst.providers import DVSTConfigProvider, DVSTDatasetProvider, DVSTModelProvider, DVSTOptimizerProvider, DVSTLossProvider, DVSTRunProvider
 
 async def main(
     config_provider: ConfigProvider,
     dataset_provider: DatasetProvider,
     model_provider: ModelProvider,
     optimizer_provider: OptimizerProvider,
+    loss_provider: LossProvider,
     log_provider: LogProvider,
     run_provider: RunProvider
 ):
@@ -23,13 +24,15 @@ if __name__ == '__main__':
     dataset_provider = DVSTDatasetProvider()
     model_provider = DVSTModelProvider()
     optimizer_provider = DVSTOptimizerProvider()
+    loss_provider = DVSTLossProvider()
     log_provider = PrintLogProvider()
-    run_provider = DVSTRunProvider(dataset_provider, model_provider, optimizer_provider, log_provider)
+    run_provider = DVSTRunProvider(dataset_provider, model_provider, optimizer_provider, loss_provider, log_provider)
     asyncio.run(main(
         config_provider=config_provider,
         dataset_provider=dataset_provider,
         model_provider=model_provider,
         optimizer_provider=optimizer_provider,
+        loss_provider=loss_provider,
         log_provider=log_provider,
         run_provider=run_provider
     ))
