@@ -201,7 +201,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # Updates the scale for next iteration
         self.grad_manager.update()
         
-        self.logger.log({'loss', float(loss.detach())})
+        self.logger.log({'loss': float(loss.detach())})
     
     # This method is run after each pass to update stuff
     def _step(self):
