@@ -73,7 +73,10 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 total_epochs=1,
                 # Save after every n passes (forward/backward pass)
                 save_every_passes=100,
-                checkpoints_folder_path='res/tmp/checkpoint/',
+                checkpoints=CheckpointsConfig(
+                    # Folder in which to save checkpoints
+                    folder_path='res/tmp/checkpoint/',
+                ),
                 # Gradient clipping config
                 grad_clipping=GradClippingConfig(
                     # Whether to use gradient clipping

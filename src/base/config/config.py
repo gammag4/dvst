@@ -103,6 +103,12 @@ class DataConfig(ABC, Generic[TDatasetConfig]):
     dataloader: DataloaderConfig
 
 
+@dataclass
+class CheckpointsConfig:
+    folder_path: str
+    weights_only: bool
+
+
 TOptimizerConfig = TypeVar('TOptimizerConfig')
 
 
@@ -116,7 +122,7 @@ class TrainConfig(Generic[TDatasetConfig, TOptimizerConfig, TLossConfig]):
     loss: TLossConfig
     total_epochs: int
     save_every_passes: int
-    checkpoints_folder_path: str
+    checkpoints: CheckpointsConfig
     grad_clipping: GradClippingConfig
 
 

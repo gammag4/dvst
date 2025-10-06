@@ -9,6 +9,7 @@ from .config import (
     TDatasetConfig,
     DataloaderConfig,
     DataConfig,
+    CheckpointsConfig,
     TOptimizerConfig,
     TLossConfig,
     TrainConfig,

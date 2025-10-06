@@ -129,13 +129,15 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         return state
     
     def _try_load_checkpoint(self):
-        os.makedirs(self.checkpoints_folder_path, exist_ok=True)
-        checkpoints = os.listdir(self.checkpoints_folder_path)
+        config = self.config.train.checkpoints
+        
+        os.makedirs(config.folder_path, exist_ok=True)
+        checkpoints = os.listdir(config.folder_path)
         if len(checkpoints) == 0:
             return
         
         last_checkpoint = max(checkpoints, key=lambda x: int(x.split('.')[0]))
-        checkpoint_path = os.path.join(self.checkpoints_folder_path, last_checkpoint)
+        checkpoint_path = os.path.join(config.folder_path, last_checkpoint)
         
         # Maps to the specific device
         # This prevents processes from using others' devices (when set to accelerator:local_rank)
@@ -144,7 +146,9 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         print(f'Resuming training from checkpoint at {checkpoint_path}')
     
     def _try_save_checkpoint(self):
-        checkpoint_path = os.path.join(self.checkpoints_folder_path, f'{self.logger.iteration}.pt')
+        config = self.config.train.checkpoints
+        
+        checkpoint_path = os.path.join(config.folder_path, f'{self.logger.iteration}.pt')
         
         self.current_global_pass += 1
         
