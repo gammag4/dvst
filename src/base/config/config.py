@@ -122,6 +122,7 @@ class TrainConfig(Generic[TDatasetConfig, TOptimizerConfig, TLossConfig]):
     loss: TLossConfig
     total_epochs: int
     save_every_passes: int
+    log_every_passes: int
     checkpoints: CheckpointsConfig
     grad_clipping: GradClippingConfig
 

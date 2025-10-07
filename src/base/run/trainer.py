@@ -205,7 +205,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # Updates the scale for next iteration
         self.grad_manager.update()
         
-        self.logger.log({'loss': float(loss.detach())})
+        self.logger.log({'loss': loss.detach()})
     
     # This method is run after each pass to update stuff
     def _step(self):
@@ -216,7 +216,8 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             'eta': str(datetime.timedelta(seconds=self.timer.eta))
         })
         
-        self.logger.display_current()
+        if self.rank == 0 and self.current_global_pass % self.config.train.log_every_passes == 0:
+            self.logger.display_current()
         self.logger.update()
         
         if self.loss_scheduler is not None:
