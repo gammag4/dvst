@@ -40,10 +40,10 @@ class Logger(ABC):
         }
     
     def load_state_dict(self, state_dict):
-        self.logs = state_dict.pop('logs')
-        self.iteration = state_dict.pop('iteration')
-        self.iteration_vars = state_dict.pop('iteration_vars')
-        self.vars = state_dict.pop('vars')
+        self.logs = state_dict['logs']
+        self.iteration = state_dict['iteration']
+        self.iteration_vars = state_dict['iteration_vars']
+        self.vars = state_dict['vars']
 
 
 class PrintLogger(Logger):
