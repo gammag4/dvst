@@ -19,7 +19,7 @@ class PerceptualLoss(nn.Module):
         
         self.transforms = weights.transforms()
         self.transforms.resize_size=224
-        self.layers = [lambda x: x] + list(model.features) + [lambda x: model.classifier(model.avgpool(x))]
+        self.layers = list(model.features) + [lambda x: model.classifier(model.avgpool(x))]
         self.model = model
         
         self.layer_weights = layer_weights
@@ -32,11 +32,13 @@ class PerceptualLoss(nn.Module):
         return torch.norm(x1 - x2, p=2, dim=-1).sum() / N
     
     def forward(self, input, target):
+        losses = []
+        
         x1 = F.center_crop(input, max(input.shape[-1], input.shape[-2]))
         x2 = F.center_crop(target, max(target.shape[-1], target.shape[-2]))
-        x1, x2 = self.transforms(x1), self.transforms(x2)
+        losses.append(self.forward_layer(x1, x2))
         
-        losses = []
+        x1, x2 = self.transforms(x1), self.transforms(x2)
         for l in self.layers:
             x1, x2 = l(x1), l(x2)
             losses.append(self.forward_layer(x1, x2))
