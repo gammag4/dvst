@@ -5,12 +5,6 @@ from .io import safe_open_write, json_load, json_dump, json_get, text_get, try_r
 from .visualization import get_camera_geometry
 
 
-def create_bound_function(self, func):
-    # Binds an external function to a class instance as if it was defined in the class
-    def new_func(*args, **kwargs): return func(self, *args, **kwargs)
-    return new_func
-
-
 def format_big_number(num):
     if num < 1:
         return f'{num}'

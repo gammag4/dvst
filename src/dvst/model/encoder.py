@@ -1,7 +1,6 @@
+from functools import partial
 import torch
 import torch.nn as nn
-
-from src.base.utils import create_bound_function
 
 from src.dvst.config import DVSTModelConfig
 from src.dvst.datasets.scene_dataset import Scene
@@ -20,7 +19,7 @@ class DVSTEncoder(nn.Module):
         
         self.start_latent_embeds = nn.Parameter(torch.zeros((1, self.config.n_lat, self.config.d_model)))
         self.pose_encoder = pose_encoder
-        self.latent_aggregator = create_bound_function(self, self.config.latent_aggregator)
+        self.latent_aggregator = partial(self.config.latent_aggregator, self)
         
         self.latent_norm = nn.LayerNorm(self.config.d_model) #TODO check RMSNorm
         self.transformer = Encoder(
