@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from pprint import pprint
 
 
 class Logger(ABC):
@@ -47,10 +48,10 @@ class Logger(ABC):
 
 class PrintLogger(Logger):
     def message(self, msg):
-        print(msg)
+        pprint(msg)
     
     def display_current(self):
-        print(self.vars)
+        pprint(self.vars)
 
 
 class Stateful(ABC):

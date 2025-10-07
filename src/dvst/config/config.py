@@ -53,8 +53,15 @@ class DVSTOptimizerConfig:
 
 
 @dataclass
+class DVSTLossSchedulerConfig:
+    beta: int
+    regime: str
+
+
+@dataclass
 class DVSTLossConfig:
-    pass
+    loss: str
+    scheduler: DVSTLossSchedulerConfig
 
 
 DVSTConfig = Config[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVSTLossConfig]

@@ -20,7 +20,7 @@ class PerceptualLoss(nn.Module):
         self.layers = [lambda x: x] + list(model.features) + [lambda x: model.classifier(model.avgpool(x))]
         self.model = model
         
-        self.layer_weights = layer_weights # TODO put to weight scheduler
+        self.layer_weights = layer_weights
 
     def forward(self, input, target):
         x1, x2 = self.transforms(input), self.transforms(target)
@@ -34,7 +34,7 @@ class PerceptualLoss(nn.Module):
             N = x1.shape[offset:].numel()
             losses.append(torch.norm(x1 - x2, p=2, dim=-1).sum() / N)
 
-        weights = self.layer_weights / self.layer_weights.sum() # Normalizes weights
-        weights = weights.to(input.device) # TODO put to weight scheduler
+        weights = self.layer_weights.to(input.device)
+        weights = weights / weights.sum() # Normalizes weights
         loss = (torch.stack(losses) * weights).sum()
         return loss

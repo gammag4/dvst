@@ -101,6 +101,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             'train_data': self.train_data.state_dict(),
             'val_data': self.val_data.state_dict(),
             'base_model': self.base_model.state_dict(),
+            'loss_scheduler': self.loss_scheduler.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'grad_manager': self.grad_manager.state_dict(),
             'logger': self.logger.state_dict(),
@@ -115,6 +116,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.train_data.load_state_dict(state_dict['train_data'])
         self.val_data.load_state_dict(state_dict['val_data'])
         self.base_model.load_state_dict(state_dict['base_model'])
+        self.loss_scheduler.load_state_dict(state_dict['loss_scheduler'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
         self.grad_manager.load_state_dict(state_dict['grad_manager'])
         self.logger.load_state_dict(state_dict['logger'])
@@ -214,6 +216,9 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         
         self.logger.display_current()
         self.logger.update()
+        
+        if self.loss_scheduler is not None:
+            self.loss_scheduler.step()
     
     # Use this method to run one forward/backward pass for a generic model
     def _run_pass(self, *args):
@@ -265,7 +270,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         val_data = self.dataset_provider.create_val_dataset(dataset_config)
         self.val_data = self._create_dataloader(val_data)
         
-        loss = self.loss_provider.create_loss(self.config.train.loss)
+        loss, self.loss_scheduler = self.loss_provider.create_loss(self.config.train.loss, self.total_steps)
         model = self.model_provider.create_model(self.config.model, loss)
         self.optimizer = self.optimizer_provider.create_optimizer(self.config.train.optimizer, model)
         

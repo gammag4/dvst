@@ -108,7 +108,14 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                     fused=True
                 ),
                 loss=DVSTLossConfig(
-                    # No loss configs yet
+                    # Loss to use, can be either 'mse' or 'perceptual'
+                    loss='perceptual',
+                    scheduler=DVSTLossSchedulerConfig(
+                        # Beta for perceptual loss scheduler
+                        beta=0.6,
+                        # Regime to use for perceptual loss scheduler, can be either 'constant', 'deep_to_shallow' or 'shallow_to_deep'
+                        regime='constant'
+                    )
                 )
             ),
             model=DVSTModelConfig(

@@ -4,6 +4,7 @@ from .config import (
     ModelTrainConfig,
     DVSTModelConfig,
     DVSTOptimizerConfig,
+    DVSTLossSchedulerConfig,
     DVSTLossConfig,
     DVSTConfig
 )

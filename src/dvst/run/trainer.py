@@ -5,6 +5,7 @@ from src.base.run import DefaultDistributedTrainer
 
 from src.dvst.datasets.scene_dataset import SceneDataset
 from src.dvst.config import *
+from src.dvst.loss import PerceptualLoss
 from src.dvst.model import DVST
 
 
@@ -13,13 +14,13 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
     def n_train_steps(self):
         dataset = cast(SceneDataset, self.train_data.dataset)
         
-        return dataset.n_frames // self.base_model.scene_batch_size # TODO
+        return dataset.n_frames // self.config.model.scene_batch_size # TODO
     
     @property
     def n_val_steps(self):
         dataset = cast(SceneDataset, self.val_data.dataset)
         
-        return dataset.n_frames // self.base_model.scene_batch_size # TODO
+        return dataset.n_frames // self.config.model.scene_batch_size # TODO
     
     def load_default_state(self):
         super().load_default_state()
@@ -49,6 +50,10 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         return loss
     
     def _step(self):
+        if isinstance(self.base_model.loss, PerceptualLoss):
+            loss = cast(PerceptualLoss, self.base_model.loss)
+            self.logger.log({'perceptual_weights': loss.layer_weights})
+        
         super()._step()
     
         self.current_scene_frame += self.current_scene_batch_size
