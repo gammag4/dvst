@@ -50,12 +50,12 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         return loss
     
     def _step(self):
+        super()._step()
+        
         if isinstance(self.base_model.loss, PerceptualLoss):
             loss = cast(PerceptualLoss, self.base_model.loss)
             self.logger.log({'perceptual_weights': loss.layer_weights})
         
-        super()._step()
-    
         self.current_scene_frame += self.current_scene_batch_size
     
     def _run_dataset_batch(self, batch):

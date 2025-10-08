@@ -150,8 +150,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         
         checkpoint_path = os.path.join(config.folder_path, f'{self.logger.iteration}.pt')
         
-        self.current_global_pass += 1
-        
         # Ensures only saves from first GPU to prevent redundancy
         if self.rank == 0 and self.current_global_pass % self.config.train.save_every_passes == 0:
             torch.save(self.state_dict(), checkpoint_path)
@@ -216,10 +214,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             'eta': str(datetime.timedelta(seconds=self.timer.eta))
         })
         
-        if self.rank == 0 and self.current_global_pass % self.config.train.log_every_passes == 0:
-            self.logger.display_current()
-        self.logger.update()
-        
         if self.loss_scheduler is not None:
             self.loss_scheduler.step()
         
@@ -235,6 +229,13 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
                 break
         
         self._step()
+        
+        self.current_global_pass += 1
+        
+        if self.rank == 0 and self.current_global_pass % self.config.train.log_every_passes == 0:
+            self.logger.display_current()
+        self.logger.update()
+        
         self._try_save_checkpoint()
     
     # This method receives one batch directly from the dataset and should train the model with it, should not be called by the used
