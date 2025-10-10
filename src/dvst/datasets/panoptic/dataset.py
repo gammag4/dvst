@@ -1,4 +1,5 @@
 import os
+import math
 
 from src.base.utils import json_load
 
@@ -10,7 +11,7 @@ class PanopticDataset(SceneDataset):
         self.path = path
         self.fps = {'hd': 29.97, 'vga': 25.0, 'kinect-color': 30}
         
-        scenes = []
+        scenes: list[SceneData] = []
         for sname in os.listdir(self.path):
             if not os.path.isdir(os.path.join(self.path, sname)):
                 continue
@@ -58,3 +59,6 @@ class PanopticDataset(SceneDataset):
     @property
     def n_scenes(self):
         return len(self.scenes)
+    
+    def get_n_batches(self, batch_size):
+        return sum([math.ceil(s.n_frames / batch_size) for s in self.scenes])

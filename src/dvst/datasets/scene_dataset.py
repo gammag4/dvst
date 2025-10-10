@@ -391,6 +391,10 @@ class SceneDataset(ABC, Dataset[SceneData]):
     @abstractmethod
     def n_scenes(self):
         pass
+    
+    @abstractmethod
+    def get_n_batches(self, batch_size):
+        pass
 
 
 # TODO maybe decouple this into simple collection for generic datasets?
@@ -405,6 +409,9 @@ class CollectionSceneDataset(SceneDataset):
     @property
     def n_scenes(self):
         return sum((d.n_scenes for d in self.datasets))
+    
+    def get_n_batches(self, batch_size):
+        sum([d.get_n_batches(batch_size) for d in self.datasets])
     
     def __len__(self):
         return sum((len(d) for d in self.datasets))
