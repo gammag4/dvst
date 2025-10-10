@@ -44,7 +44,7 @@ class _BatchedData(ABC):
     
     @property
     def n_batches(self):
-        return 1 if self.batch_size is None else math.ceil(self._n_items / self.batch_size)
+        return 1 if self.batch_size is None and self._n_items != 0 else math.ceil(self._n_items / self.batch_size)
     
     @abstractmethod
     def get_slice(self, start, end):
@@ -94,12 +94,11 @@ class _ViewBase(_BatchedData):
         return self.end - self.start
     
     def get_slice(self, start, end):
-        shape = torch.Size([end - start, *self.shape[1:]])
+        new_start = self.start if start is None else self.start + start
+        new_end = self.end if end is None else self.start + end
+        new_end = max(new_start, min(self.end, new_end))
         
-        start = self.start + start
-        end = self.start + end
-        end = max(start, min(self.end, end))
-        
+        shape = torch.Size([new_end - new_start, *self.shape[1:]])
         view = self._view[start:end] if (self._view is not None) and self._loaded else self._view
         
         return _ViewBase(
@@ -107,8 +106,8 @@ class _ViewBase(_BatchedData):
             shape,
             self.batch_size,
             self.resize_to,
-            start,
-            end
+            new_start,
+            new_end
         )
 
 
@@ -270,7 +269,7 @@ class VideoViewData(AbstractViewData):
 # This may either be an entire scene or just one batch
 # Iterating over it iterates over its batches
 class Scene(_BatchedData):
-    def __init__(self, scene_id: str, views: list[View], n_frames, batch_size, sources_idx, queries_targets_idx=[], start=None, end=None):
+    def __init__(self, scene_id: str, views: list[View], batch_size, sources_idx, queries_targets_idx, start, end):
         super().__init__(batch_size)
         # Sources is the list of source views that will be used to create latent representation of scene
         # Queries is a list of frame queries (pose + time frame) to be retrieved
@@ -284,11 +283,14 @@ class Scene(_BatchedData):
         self._targets = None
         
         self.scene_id = scene_id
-        self.n_frames = n_frames
         
-        self.start = 0 if start is None else start
-        self.end = self.n_frames if end is None else end
-        
+        self.start = start
+        self.end = end
+    
+    @property
+    def n_frames(self):
+        return self.end - self.start
+    
     @property
     def sources(self):
         if self._sources is None:
@@ -315,13 +317,18 @@ class Scene(_BatchedData):
         return self.n_frames
     
     def get_slice(self, start, end):
+        new_start = self.start if start is None else self.start + start
+        new_end = self.end if end is None else self.start + end
+        new_end = max(new_start, min(self.end, new_end))
+        
         return Scene(
             self.scene_id,
             [v.get_slice(start, end) for v in self._views],
-            end - start,
             self.batch_size,
             self._sources_idx,
-            self._queries_targets_idx
+            self._queries_targets_idx,
+            new_start,
+            new_end
         )
 
 
@@ -337,10 +344,11 @@ class SceneData:
         return Scene(
             self.scene_id,
             [v.load_view(batch_size, device) for v in self.view_datas],
-            self.n_frames,
             batch_size,
             self.sources_idx,
-            self.queries_targets_idx
+            self.queries_targets_idx,
+            0,
+            self.n_frames
         )
     
     # If n_sources or n_targets are None, all videos are chosen as sources/targets respectively
