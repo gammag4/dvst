@@ -48,6 +48,6 @@ class DVST(nn.Module):
             l = self.loss(frames, target.view) / query.shape[0]
             loss = loss + l
         
-        last_frames = {'gen': frames, 'target': target.view}
+        last_frames = {'gen': frames.detach(), 'target': target.view}
         
         return loss, latent_embeds, last_frames
