@@ -1,9 +1,10 @@
 import gc
 from typing import cast
+import random
 
 from src.base.run import DefaultDistributedTrainer
 
-from src.dvst.datasets.scene_dataset import SceneDataset
+from src.dvst.datasets.scene_dataset import SceneDataset, Scene, SceneData
 from src.dvst.config import *
 from src.dvst.loss import PerceptualLoss
 from src.dvst.model import DVST
@@ -55,17 +56,18 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         if isinstance(self.base_model.loss, PerceptualLoss):
             loss = cast(PerceptualLoss, self.base_model.loss)
             self.logger.log({'perceptual_weights': loss.layer_weights})
-        
-        self.current_scene_frame += self.current_scene_batch_size
     
-    def _run_dataset_batch(self, batch):
+    def _run_dataset_batch(self, batch: SceneData):
         scene = batch.load_scene(self.base_model.scene_batch_size, self.device)
-        
-        self.current_scene_batch_size = scene.batch_size
+        scene.start = self.current_scene_frame
         
         self.logger.log({'scene_id': scene.scene_id})
         
+        # while True:
+        #     scene_batch = scene.get_batch(random.randint(0, scene.n_batches - 1))
         for scene_batch in scene:
+            self.current_scene_frame = scene_batch.start
+            
             # TODO save each batch history at checkpoints too put to separate function
             #   in same function also save latent_embeds data sum mean var add it explicitly in function as extra args
             #   add everything and log it to a file
