@@ -367,7 +367,7 @@ class SceneData:
             random.shuffle(view_datas)
         
         idx = list(range(len(view_datas)))
-        sources_idx, queries_targets_idx = idx[-n_sources:], idx[:n_targets]
+        sources_idx, queries_targets_idx = idx[None if n_sources is None else -n_sources:], idx[:n_targets]
 
         if shuffle and not shuffle_before_splitting:
             random.shuffle(sources_idx)

@@ -40,7 +40,7 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
         R, t = T[:, :, :3], T[:, :, 3:]
         
         # TODO randomly choose views
-        sources_mask = torch.arange(images.shape[0])[-self.n_sources:]
+        sources_mask = torch.arange(images.shape[0])[None if self.n_sources is None else -self.n_sources:]
         targets_mask = torch.arange(images.shape[0])[:self.n_targets]
         
         view_datas = [
