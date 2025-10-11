@@ -266,6 +266,15 @@ class VideoViewData(AbstractViewData):
         return VideoDecoder(self.path, device=device)
 
 
+class TensorViewData(AbstractViewData):
+    def __init__(self, view: torch.Tensor, K, R, t, time: torch.Tensor | None, fps: float | torch.FloatType | None, shape, resize_to):
+        super().__init__(K, R, t, time, fps, shape, resize_to)
+        self.view = view
+    
+    def _load_raw_view(self, device):
+        return self.view.to(device)
+
+
 # This may either be an entire scene or just one batch
 # Iterating over it iterates over its batches
 class Scene(_BatchedData):

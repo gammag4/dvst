@@ -6,6 +6,7 @@ from src.base.providers import DatasetProvider
 
 from src.dvst.config import DVSTDatasetConfig
 from .panoptic import PanopticDataset, PanopticDownloader
+from .realestate10k import PixelSplatRealEstate10KDataset, PixelSplatRealEstate10KDownloader
 
 
 class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
@@ -19,6 +20,9 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
                 n_scenes=None,
                 n_views=8
             ),
+            PixelSplatRealEstate10KDownloader(
+                path=os.path.join(config.path, 'realestate10k/train')
+            )
         ]
         
         for d in downloaders:
@@ -32,9 +36,17 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
         # when adding image datasets, concat them into tensor and return it as if it was the video
         datasets = [
             PanopticDataset(
-                os.path.join(config.path, 'panoptic'),
-                (64, 114), 2, None
+                path=os.path.join(config.path, 'panoptic'),
+                resize_to=(64, 114),
+                n_sources=2,
+                n_targets=None
             ),
+            PixelSplatRealEstate10KDataset(
+                path=os.path.join(config.path, 'realetate10k/train'),
+                resize_to=(64, 114),
+                n_sources=None,
+                n_targets=None
+            )
             # RawPlenopticDataset(
             #     os.path.join(config.path, 'plenoptic'),
             #     (64, 114), 2, None

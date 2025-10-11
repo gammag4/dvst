@@ -13,16 +13,35 @@ class DatasetDownloader(ABC):
     async def _download(self):
         pass
     
+    @abstractmethod
+    def _post_process(self):
+        pass
+    
     async def download(self):
         check_downloaded_path = os.path.join(self.path, f'check_fully_downloaded.json')
         
+        should_download = True
+        should_process = True
+        
         try:
-            json_load(check_downloaded_path)
-            print(f'Dataset "{self.dataset_name}" already downloaded')
-            return
+            res = json_load(check_downloaded_path)
+            should_download = not res.get('downloaded', False)
+            should_process = not res.get('post_processed', False)
         except:
             pass
         
-        await self._download()
+        if should_download:
+            print(f'Downloading dataset "{self.dataset_name}"')
+            await self._download()
+            json_dump(check_downloaded_path, {'downloaded': True, 'post_processed': False})
+            print(f'Dataset "{self.dataset_name}" downloaded')
+        else:
+            print(f'Dataset "{self.dataset_name}" already downloaded')
         
-        json_dump(check_downloaded_path, [True])
+        if should_process:
+            print(f'Processing dataset "{self.dataset_name}"')
+            self._post_process()
+            json_dump(check_downloaded_path, {'downloaded': True, 'post_processed': True})
+            print(f'Dataset "{self.dataset_name}" processed')
+        else:
+            print(f'Dataset "{self.dataset_name}" already processed')

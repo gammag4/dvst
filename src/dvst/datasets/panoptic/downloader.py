@@ -14,12 +14,12 @@ from src.dvst.utils import ffmpeg_try_process_video, get_video_info
 class MyProgressBar():
     def __init__(self):
         self.pbar = None
-
+    
     def __call__(self, block_num, block_size, total_size):
         if not self.pbar:
             self.pbar = progressbar.ProgressBar(maxval=total_size)
             self.pbar.start()
-
+    
         downloaded = block_num * block_size
         if downloaded < total_size:
             self.pbar.update(downloaded)
@@ -166,7 +166,7 @@ class PanopticDownloader(DatasetDownloader):
                     views=downloaded_scams,
                     n_frames=n_frames,
                 ))
-
+                
                 downloaded_scenes += 1
                 if self.n_scenes is not None and downloaded_scenes == self.n_scenes:
                     break
@@ -174,6 +174,9 @@ class PanopticDownloader(DatasetDownloader):
             downloaded_scams = []
             curr_type = 0
         
+        try_remove(backup_path)
+    
+    def _post_process(self):
         total_n_frames = 0
         
         for f in os.listdir(self.path):
@@ -187,5 +190,3 @@ class PanopticDownloader(DatasetDownloader):
         json_dump(os.path.join(self.path, f'data.json'), edict(
             n_frames=total_n_frames,
         ))
-        
-        try_remove(backup_path)
