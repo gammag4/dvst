@@ -30,8 +30,13 @@ def compute_view_rays(vecs, Kinv, R, t):
 
     o = -einx.dot('... h w, ... h -> ... w', R, t)  # -R^T t
     o = einx.rearrange('... c -> ... c h w', o, h=h, w=w) # repeat o for each vec # TODO repeating maybe not needed
-    d = einx.dot('... x1 c2, x1 c, c h w -> ... c2 h w', R, Kinv, vecs) # R^T K^-1 x_ij,cam
-    d = d / einx.sum('b [c] h w -> b 3 h w', d * d).sqrt() # normalize d
+    
+    if len(Kinv.shape) == 2:
+        d = einx.dot('... x1 c2, x1 c, c h w -> ... c2 h w', R, Kinv, vecs) # R^T K^-1 x_ij,cam
+    else:
+        d = einx.dot('... x1 c2, ... x1 c, c h w -> ... c2 h w', R, Kinv, vecs) # R^T K^-1 x_ij,cam
+    
+    d = d / einx.sum('... [c] h w -> ... 3 h w', d * d).sqrt() # normalize d
 
     # o, d: (B, 3, H, W)
     return o, d

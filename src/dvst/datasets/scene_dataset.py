@@ -142,8 +142,8 @@ class View(_ViewBase):
         self.time = time
     
     def get_slice(self, start, end):
-        K = self.K
-        Kinv = self.Kinv
+        K = self.K if len(self.K.shape) == 2 else self.K[start:end]
+        Kinv = self.Kinv if len(self.Kinv.shape) == 2 else self.Kinv[start:end]
         R = self.R if self.R.shape[0] == 1 else self.R[start:end]
         t = self.t if self.t.shape[0] == 1 else self.t[start:end]
         time = self.time[start:end]
@@ -231,12 +231,14 @@ class AbstractViewData(ABC):
 
         K, R, t = self.K, self.R, self.t
         K, R, t, time = [i.to(torch.float32).to(device) if isinstance(i, torch.Tensor) else torch.tensor(i, device=device) for i in (K, R, t, time)]
-
+        
         # Takes into account resized images
         h_real, w_real = shape[-2:] if self.resize_to is None else self.resize_to
-        h, w = 2 * K[1, 2], 2 * K[0, 2]
-        K[1, 2], K[0, 2] = h_real / 2, w_real / 2 # p_y, p_x
-        K[0, 0], K[1, 1] = K[0, 0] * (w_real / w), K[1, 1] * (h_real / h) # c_x, c_y
+        h, w = 2 * K[..., 1, 2], 2 * K[..., 0, 2]
+        K[..., 1, 2], K[..., 0, 2] = h_real / 2, w_real / 2 # p_y, p_x
+        K[..., 0, 0], K[..., 1, 1] = K[..., 0, 0] * (w_real / w), K[..., 1, 1] * (h_real / h) # c_x, c_y
+        
+        K = K.squeeze(0)
         
         R = R.squeeze().reshape((-1, 3, 3))
         t = t.squeeze().reshape((-1, 3))

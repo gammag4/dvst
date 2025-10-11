@@ -46,8 +46,7 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
         view_datas = [
             TensorViewData(
                 view=images[targets_mask],
-                K=K[0], # TODO
-                # K=K[targets_mask],
+                K=K[targets_mask],
                 R=R[targets_mask],
                 t=t[targets_mask],
                 time=times[targets_mask],
@@ -57,8 +56,7 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
             ),
             TensorViewData(
                 view=images[sources_mask],
-                K=K[0], # TODO
-                # K=K[sources_mask],
+                K=K[sources_mask],
                 R=R[sources_mask],
                 t=t[sources_mask],
                 time=times[sources_mask],
