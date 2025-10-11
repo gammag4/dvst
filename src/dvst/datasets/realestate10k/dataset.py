@@ -68,7 +68,7 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
             )
         ]
         
-        scene = SceneData.from_sources_targets_split(
+        return SceneData.from_sources_targets_split(
             dataset_name='realestate10k',
             scene_name=scene_name,
             view_datas=view_datas,
@@ -78,7 +78,6 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
             shuffle=True,
             shuffle_before_splitting=True
         )
-        return self.scenes[i]
     
     @property
     def n_frames(self):

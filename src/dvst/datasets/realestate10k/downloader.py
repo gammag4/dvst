@@ -22,7 +22,7 @@ from src.dvst.utils import ffmpeg_try_process_video, get_video_info
 # Downloads the pixelSplat preprocessed version of RE10K described here: https://github.com/dcharatan/pixelsplat?tab=readme-ov-file#acquiring-datasets
 class PixelSplatRealEstate10KDownloader(DatasetDownloader):
     def __init__(self, path):
-        self.path = path
+        super().__init__('realestate10k', path)
     
     async def _download(self):
         pass
