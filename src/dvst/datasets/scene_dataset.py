@@ -216,7 +216,7 @@ class AbstractViewData(ABC):
         # TODO default is return VideoDecoder(self.view_path, device=device)
         pass
     
-    def load_view(self, batch_size, device):
+    def load_view(self, batch_size: int | None, device):
         # Preprocesses data for a scene view and returns the result
         # R and t may be either just one matrix for the entire thing (static cameras) or a batch of matrices, one for each frame (moving cameras)
         # TODO do matrix computations from here precached and store in database, especially the ones for moving cameras, which have per-frame matrices
@@ -280,7 +280,7 @@ class TensorViewData(AbstractViewData):
 # This may either be an entire scene or just one batch
 # Iterating over it iterates over its batches
 class Scene(_BatchedData):
-    def __init__(self, scene_id: str, views: list[View], batch_size, sources_idx, queries_targets_idx, start, end):
+    def __init__(self, scene_id: str, views: list[View], batch_size: int | None, sources_idx, queries_targets_idx, start, end):
         super().__init__(batch_size)
         # Sources is the list of source views that will be used to create latent representation of scene
         # Queries is a list of frame queries (pose + time frame) to be retrieved
@@ -351,7 +351,7 @@ class SceneData:
         self.sources_idx = sources_idx
         self.queries_targets_idx = queries_targets_idx
     
-    def load_scene(self, batch_size, device):
+    def load_scene(self, batch_size: int | None, device):
         return Scene(
             self.scene_id,
             [v.load_view(batch_size, device) for v in self.view_datas],
@@ -404,7 +404,7 @@ class SceneDataset(ABC, Dataset[SceneData]):
         pass
     
     @abstractmethod
-    def get_n_batches(self, batch_size):
+    def get_n_batches(self, batch_size: int | None):
         pass
 
 

@@ -11,6 +11,7 @@ from src.base.config import Config
 @dataclass
 class DVSTDatasetConfig:
     path: str
+    scene_batch_size: int
 
 
 @dataclass
@@ -40,7 +41,6 @@ class DVSTModelConfig:
 
     n_lat: int
     latent_aggregator: Callable[[Module, Tensor, Tensor], Tensor]
-    scene_batch_size: int
 
     train: ModelTrainConfig
 

@@ -97,7 +97,11 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                     ),
                     dataset=DVSTDatasetConfig(
                         # Path for datasets
-                        path='res/tmp/'
+                        path='res/tmp/',
+                        # TODO How many frames to break scenes into (use if using input scenes that are too big)
+                        # When using this, after the specified number of frames, the latent_embedding has its grad graph removed and becomes a leaf tensor
+                        #   Its gradients are not propagated back to the start_latent_embeds parameter, but this saves memory
+                        scene_batch_size=1
                     )
                 ),
                 optimizer=DVSTOptimizerConfig(
@@ -154,10 +158,6 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 n_lat=256,
                 # The function that will be used to aggregate latents across frames. Should be one of the functions from src.model.latent_aggregators
                 latent_aggregator=residual_latent_aggregator,
-                # TODO How many frames to break scenes into (use if using input scenes that are too big)
-                # When using this, after the specified number of frames, the latent_embedding has its grad graph removed and becomes a leaf tensor
-                #   Its gradients are not propagated back to the start_latent_embeds parameter, but this saves memory
-                scene_batch_size=1,
                 
                 # frames_per_scene is the size of the batches that the videos will be broken into to create scenes
                 #   TODO this was from the old idea of breaking scene into smaller batches of 3

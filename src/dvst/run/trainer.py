@@ -15,13 +15,13 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
     def n_train_steps(self):
         dataset = cast(SceneDataset, self.train_data.dataset)
         
-        return dataset.n_frames // self.config.model.scene_batch_size # TODO
+        return dataset.n_frames // self.config.train.data.dataset.scene_batch_size # TODO
     
     @property
     def n_val_steps(self):
         dataset = cast(SceneDataset, self.val_data.dataset)
         
-        return dataset.n_frames // self.config.model.scene_batch_size # TODO
+        return dataset.n_frames // self.config.train.data.dataset.scene_batch_size # TODO
     
     def load_default_state(self):
         super().load_default_state()
@@ -58,7 +58,7 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
             self.logger.log({'perceptual_weights': loss.layer_weights})
     
     def _run_dataset_batch(self, batch: SceneData):
-        scene = batch.load_scene(self.base_model.scene_batch_size, self.device)
+        scene = batch.load_scene(self.config.train.data.dataset.scene_batch_size, self.device)
         scene.start = self.current_scene_frame
         
         self.logger.log({'scene_id': scene.scene_id})

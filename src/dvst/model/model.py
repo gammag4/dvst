@@ -17,7 +17,6 @@ class DVST(nn.Module):
         super().__init__()
         
         self.config = config
-        self.scene_batch_size = self.config.scene_batch_size
         
         self.pose_encoder = PoseEncoder(self.config)
         self.encoder = DVSTEncoder(self.config, self.pose_encoder)
