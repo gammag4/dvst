@@ -39,6 +39,7 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
         T = cameras[:, 6:].reshape((-1, 3, 4))
         R, t = T[:, :, :3], T[:, :, 3:]
         
+        # TODO change scene dataset to allow static scenes to have just a single batch
         view_datas = [
             TensorViewData(
                 view=images[i:i+1],
@@ -49,7 +50,7 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
                 fps=None,
                 shape=images[i:i+1].shape,
                 resize_to=self.resize_to
-            ) for i in range(len(images.shape[0]))
+            ) for i in range(images.shape[0])
         ]
         
         return SceneData.from_sources_targets_split(

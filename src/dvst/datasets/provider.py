@@ -45,7 +45,7 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
                 path=os.path.join(config.path, 'realetate10k/train'),
                 resize_to=(64, 114),
                 n_sources=2,
-                n_targets=None
+                n_targets=4
             )
             # RawPlenopticDataset(
             #     os.path.join(config.path, 'plenoptic'),
