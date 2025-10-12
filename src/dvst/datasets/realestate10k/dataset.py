@@ -28,7 +28,7 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
         scene = torch.load(os.path.join(self.path, scene_data.file))[scene_data.file_index]
         
         scene_name = scene['key']
-        times = scene['timestamps'] / 1000000 # From microseconds to seconds
+        # times = scene['timestamps'] / 1000000 # From microseconds to seconds
         images = torch.stack([decode_image(i) for i in scene['images']])
         cameras = scene['cameras']
         
@@ -39,40 +39,26 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
         T = cameras[:, 6:].reshape((-1, 3, 4))
         R, t = T[:, :, :3], T[:, :, 3:]
         
-        # TODO randomly choose views
-        sources_mask = torch.arange(images.shape[0])[None if self.n_sources is None else -self.n_sources:]
-        targets_mask = torch.arange(images.shape[0])[:self.n_targets]
-        
         view_datas = [
             TensorViewData(
-                view=images[targets_mask],
-                K=K[targets_mask],
-                R=R[targets_mask],
-                t=t[targets_mask],
-                time=times[targets_mask],
+                view=images[i:i+1],
+                K=K[i:i+1],
+                R=R[i:i+1],
+                t=t[i:i+1],
+                time=torch.zeros(1),
                 fps=None,
-                shape=targets_mask.shape,
+                shape=images[i:i+1].shape,
                 resize_to=self.resize_to
-            ),
-            TensorViewData(
-                view=images[sources_mask],
-                K=K[sources_mask],
-                R=R[sources_mask],
-                t=t[sources_mask],
-                time=times[sources_mask],
-                fps=None,
-                shape=sources_mask.shape,
-                resize_to=self.resize_to
-            )
+            ) for i in range(len(images.shape[0]))
         ]
         
         return SceneData.from_sources_targets_split(
             dataset_name='realestate10k',
             scene_name=scene_name,
             view_datas=view_datas,
-            n_frames=scene_data.n_frames,
-            n_sources=1,
-            n_targets=1,
+            n_frames=1,
+            n_sources=self.n_sources,
+            n_targets=self.n_targets,
             shuffle=True,
             shuffle_before_splitting=True
         )

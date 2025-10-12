@@ -44,7 +44,7 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
             PixelSplatRealEstate10KDataset(
                 path=os.path.join(config.path, 'realetate10k/train'),
                 resize_to=(64, 114),
-                n_sources=None,
+                n_sources=2,
                 n_targets=None
             )
             # RawPlenopticDataset(
