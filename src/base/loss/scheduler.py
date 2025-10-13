@@ -17,6 +17,9 @@ class LossScheduler(ABC, Generic[TLoss]):
         pass
     
     def step(self):
+        if self.iter >= self.n_iter:
+            return
+        
         self.iter += 1
         self._update_loss()
     
