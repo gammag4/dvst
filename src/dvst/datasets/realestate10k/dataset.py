@@ -66,7 +66,7 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
     
     @property
     def n_frames(self):
-        return self._n_frames
+        return len(self.scenes)
     
     @property
     def n_scenes(self):
