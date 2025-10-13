@@ -15,13 +15,13 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
     def n_train_steps(self):
         dataset = cast(SceneDataset, self.train_data.dataset)
         
-        return dataset.n_frames // self.config.train.data.dataset.scene_batch_size # TODO
+        return self.max_epochs * dataset.n_frames // self.config.train.data.dataset.scene_batch_size # TODO
     
     @property
     def n_val_steps(self):
         dataset = cast(SceneDataset, self.val_data.dataset)
         
-        return dataset.n_frames // self.config.train.data.dataset.scene_batch_size # TODO
+        return self.max_epochs * dataset.n_frames // self.config.train.data.dataset.scene_batch_size # TODO
     
     def load_default_state(self):
         super().load_default_state()
