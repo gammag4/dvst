@@ -48,3 +48,13 @@ class PerceptualLoss(nn.Module):
         
         loss = (torch.stack(losses) * weights).sum()
         return loss
+
+    def state_dict(self, *args, **kwargs):
+        state_dict = super().state_dict(*args, **kwargs)
+        state_dict['layer_weights'] = self.layer_weights
+        
+        return state_dict
+    
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        self.layer_weights = state_dict['layer_weights']
+        super().load_state_dict(state_dict, *args, **kwargs)
