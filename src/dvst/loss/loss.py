@@ -1,6 +1,6 @@
-
 import torch
 import torch.nn as nn
+import einx
 from torchvision.models import convnext_tiny, ConvNeXt_Tiny_Weights
 import torchvision.transforms.functional as F
 
@@ -17,22 +17,26 @@ class PerceptualLoss(nn.Module):
         
         self.transforms = weights.transforms()
         self.transforms.resize_size=224
-        self.layers = list(model.features) + [lambda x: model.classifier(model.avgpool(x))]
+        self.layers = list(model.features)
+        # TODO test without classifier layer
+        self.classifier_layer = lambda x: model.classifier(model.avgpool(x))
         self.model = model
         
         self.layer_weights = layer_weights
     
-    def forward_layer(self, x1, x2):
-        offset = len(x1.shape) - 3
-        
-        # C * H * W
-        N = x1.shape[offset:].numel()
-
+    def distance(self, x1, x2):
         # TODO test with norm 1 instead of 2 (other works like LVSM use norm 1)
-        return torch.norm(x1 - x2, p=2, dim=-1).sum() / N
+        return torch.norm(x1 - x2, p=2, dim=-1).sum() / x1.shape[-1] # norm / C * H * W
+    
+    def forward_layer(self, x1, x2):
+        x1, x2 = [einx.rearrange('... c h w -> ... (c h w)', k) for k in (x1, x2)]
+        
+        return self.distance(x1, x2)
     
     def forward(self, input, target):
         losses = []
+        
+        input, target = [einx.rearrange('... c h w -> (...) c h w', k) for k in (input, target)]
         
         x1 = F.center_crop(input, max(input.shape[-1], input.shape[-2]))
         x2 = F.center_crop(target, max(target.shape[-1], target.shape[-2]))
@@ -43,12 +47,14 @@ class PerceptualLoss(nn.Module):
             x1, x2 = l(x1), l(x2)
             losses.append(self.forward_layer(x1, x2))
         
+        losses.append(self.distance(self.classifier_layer(x1), self.classifier_layer(x2)))
+        
         weights = self.layer_weights.to(input.device)
         weights = weights / weights.sum() # Normalizes weights
         
         loss = (torch.stack(losses) * weights).sum()
         return loss
-
+    
     def state_dict(self, *args, **kwargs):
         state_dict = super().state_dict(*args, **kwargs)
         state_dict['layer_weights'] = self.layer_weights
