@@ -74,9 +74,9 @@ class PoseEncoder(nn.Module):
         self.n_oct = self.config.n_oct
         self.C = self.config.C
         self.p = self.config.p
-
+        
+        # This is the parameters that will represent the default image patch when there is no image to generate embeddings
         # TODO test two cases, one with parameter (this) and another with two different linear layers one for sources (w/ images) and another for target (w/o images)
-        # TODO initialize w gaussian
         # (C, p, p)
         self.im_parameter = nn.Parameter(torch.zeros((self.C, self.p, self.p)))
 
@@ -112,10 +112,6 @@ class PoseEncoder(nn.Module):
     # We assume images are in type float with colors in range 0-1
     def forward(self, Kinv, R, t, time, I=None, hw=None):
         # I: (B, C, H, W), Kinv: (3, 3), R: (B, 3, 3), t: (B, 3), time: (B,), hw: (2,)
- 
-        #TODO corrige hw
-        #TODO tem que retornar quanto de padding teve pra tirar o padding na comparacao da loss function
-        #TODO na verdade no lugar de retornar o padding ja retorna a visao prevista com padding retirado no modelo final
         
         assert (I == None) ^ (hw == None), 'Either I or HW or both should be set'
         

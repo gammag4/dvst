@@ -30,9 +30,9 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
     
     def _create_datasets(self, config):
         # TODO Add MultiShapeNet dataset https://srt-paper.github.io/#dataset
-        # TODO Add RealEstate10K dataset processed by pixelsplat https://github.com/dcharatan/pixelsplat/blob/main/README.md#acquiring-datasets
-        #   Original: google.github.io/realestate10k/download.html
-        #   Easier script to download (supposedly): https://github.com/Findeton/real-state-10k
+        # TODO Add original RealEstate10K (google.github.io/realestate10k/download.html)
+        #   Processing like pixelSplat: https://github.com/dcharatan/pixelsplat/blob/main/README.md#acquiring-datasets
+        #   Script to download more easily (supposedly): https://github.com/Findeton/real-state-10k
         # when adding image datasets, concat them into tensor and return it as if it was the video
         datasets = [
             PanopticDataset(

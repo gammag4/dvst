@@ -8,8 +8,6 @@ import torchvision.transforms.functional as F
 class PerceptualLoss(nn.Module):
     def __init__(self, layer_weights=torch.ones(10, dtype=torch.float32)):
         super().__init__()
-        # TODO Fix so that the implementation is right (use 1 norm instead of 2 and use hyperparameters for each layer)
-        # TODO add layer_weights scheduler
         weights = ConvNeXt_Tiny_Weights.DEFAULT
         model = convnext_tiny(weights=weights)
         
@@ -29,6 +27,8 @@ class PerceptualLoss(nn.Module):
         
         # C * H * W
         N = x1.shape[offset:].numel()
+
+        # TODO test with norm 1 instead of 2 (other works like LVSM use norm 1)
         return torch.norm(x1 - x2, p=2, dim=-1).sum() / N
     
     def forward(self, input, target):

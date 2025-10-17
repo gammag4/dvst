@@ -131,7 +131,6 @@ class TargetView(_ViewBase):
 
 
 # The view can be either VideoDecoder, a tensor shaped (B, C, H, W), or None if it is a query
-# TODO dependency injection pass view to decoder
 class View(_ViewBase):
     def __init__(self, view: VideoDecoder | torch.Tensor | None, K, Kinv, R, t, time, shape, batch_size=None, resize_to=None, start=None, end=None):
         super().__init__(view, shape, batch_size, resize_to, start, end)
@@ -213,7 +212,6 @@ class AbstractViewData(ABC):
     @abstractmethod
     def _load_raw_view(self, device) -> VideoDecoder | torch.Tensor:
         # Has to return an object that has .shape in format (B, C, H, W) and that can be accessed using [b1:b2, c1:c2, h1:h2, w1:w2]
-        # TODO default is return VideoDecoder(self.view_path, device=device)
         pass
     
     def load_view(self, batch_size: int | None, device):
