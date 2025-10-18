@@ -11,7 +11,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP # DDP wrapper
 import torch.distributed as dist
 import torch.amp as amp
 
-from src.base.utils import get_model_stats
+from src.base.utils import print_model_stats
 from src.base.config import Config, TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig
 from src.base.datasets.provider import DatasetProvider
 from src.base.model.provider import ModelProvider
@@ -302,7 +302,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # Starts from checkpoint if exists
         self._try_load_checkpoint()
         
-        get_model_stats(self.model)
+        print_model_stats(self.model)
         
         return self._train()
 
