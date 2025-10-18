@@ -1,8 +1,9 @@
-import torch.nn as nn
 from typing import Callable
+import torch
+import torch.nn as nn
 
 from src.dvst.config import DVSTModelConfig
-from src.dvst.datasets.scene_dataset import Scene, View
+from src.dvst.datasets.scene_dataset import SourceBatch, QueryBatch
 from .pose_encoder import PoseEncoder
 from .encoder import DVSTEncoder
 from .decoder import DVSTDecoder
@@ -28,25 +29,28 @@ class DVST(nn.Module):
     def start_latent_embeds(self):
         return self.encoder.start_latent_embeds
     
-    def create_scene_latents(self, scene: Scene, latent_embeds = None):
-        latent_embeds = self.encoder(scene, latent_embeds)
+    def create_scene_latents(self, batch: SourceBatch | list[SourceBatch], latent_embeds: torch.Tensor | None = None) -> torch.Tensor:
+        latent_embeds = self.encoder(batch, latent_embeds)
         return latent_embeds
     
-    def generate_frames(self, latent_embeds, video_query: View):
-        return self.decoder(latent_embeds, video_query)
+    def generate_frames(self, batch: QueryBatch | list[QueryBatch], latent_embeds: torch.Tensor | None) -> list[torch.Tensor] | torch.Tensor:
+        return self.decoder(batch, latent_embeds)
     
-    def forward(self, scene: Scene, latent_embeds=None):
-        loss = 0.
+    # Shape: (B, F, C, H, W)
+    def forward(self, sources: SourceBatch | list[SourceBatch], targets: SourceBatch | list[SourceBatch], latent_embeds: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, dict]:
+        latent_embeds = self.create_scene_latents(sources, latent_embeds)
         
-        latent_embeds = self.create_scene_latents(scene, latent_embeds)
-        
-        # TODO fix so that the loss starts from the beginning of the scene (queries/targets)
-        for query, target in zip(scene.queries, scene.targets):
-            frames = self.generate_frames(latent_embeds, query)
-            # TODO fix so that frames from starting batches receive less weights every time since they get repeated more
-            l = self.loss(frames, target.view) / query.shape[0]
-            loss = loss + l
-        
-        last_frames = {'gen': frames.detach(), 'target': target.view}
+        if isinstance(targets, list):
+            queries = [QueryBatch(t.Kinv, t.R, t.t, t.time, t.I.shape[-2:]) for t in targets]
+            I2 = self.generate_frames(queries, latent_embeds)
+            loss = torch.sum(torch.stack([self.loss(t.I, res) for t, res in zip(targets, I2)]))
+            
+            last_frames = {'gen': [i.detach() for i in I2], 'target': [t.I for t in targets]}
+        else:
+            queries = QueryBatch(targets.Kinv, targets.R, targets.t, targets.time, targets.I.shape[-2:])
+            I2 = self.generate_frames(queries, latent_embeds)
+            loss = self.loss(targets.I, I2)
+            
+            last_frames = {'gen': [i for i in I2.detach()], 'target': [i for i in targets.I]}
         
         return loss, latent_embeds, last_frames

@@ -236,11 +236,11 @@ class AbstractViewData(ABC):
         K[..., 1, 2], K[..., 0, 2] = h_real / 2, w_real / 2 # p_y, p_x
         K[..., 0, 0], K[..., 1, 1] = K[..., 0, 0] * (w_real / w), K[..., 1, 1] * (h_real / h) # c_x, c_y
         
-        K = K.squeeze(0)
-        
+        K = K.squeeze().reshape((-1, 3, 3))
         R = R.squeeze().reshape((-1, 3, 3))
         t = t.squeeze().reshape((-1, 3))
         
+        K = K.repeat((shape[0], 1, 1)) if K.shape[0] == 1 else K
         R = R.repeat((shape[0], 1, 1)) if R.shape[0] == 1 else R
         t = t.repeat((shape[0], 1)) if t.shape[0] == 1 else t
         
@@ -432,3 +432,29 @@ class CollectionSceneDataset(SceneDataset):
                 return d[i]
             
             i -= l
+
+
+class QueryBatch:
+    def __init__(self, Kinv: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, hw: tuple[int, int] | torch.Size):
+        self.Kinv = Kinv
+        self.R = R
+        self.t = t
+        self.time = time
+        self.hw = hw
+
+
+class SourceBatch:
+    def __init__(self, Kinv: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, I: torch.Tensor):
+        self.Kinv = Kinv
+        self.R = R
+        self.t = t
+        self.time = time
+        self.I = I
+
+
+class SceneBatch:
+    def __init__(self, dataset_name: str, scene_name: str, sources: list[SourceBatch] | SourceBatch, targets: list[SourceBatch] | SourceBatch):
+        self.scene_id = f'{dataset_name}_{scene_name}'
+        self.sources = sources # I K R t time
+        self.targets = targets # I K R t time
+        self.n_frames = sources.I.shape[1]

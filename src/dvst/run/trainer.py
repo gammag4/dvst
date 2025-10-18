@@ -1,10 +1,12 @@
 import gc
 from typing import cast
 import random
+import torch
+import einx
 
 from src.base.run import DefaultDistributedTrainer
 
-from src.dvst.datasets.scene_dataset import SceneDataset, Scene, SceneData
+from src.dvst.datasets.scene_dataset import SceneDataset, Scene, SceneData, SourceBatch, QueryBatch
 from src.dvst.config import *
 from src.dvst.loss import PerceptualLoss
 from src.dvst.model import DVST
@@ -44,9 +46,24 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         self.last_frames = state_dict['last_frames']
     
     def _run_forward(self, *args):
+        # TODO fix abomination
+        # scene_batch, mask = args
+        # # Merges frame and view dims and does masking
+        # I, Kinv, R, t, time = [einx.rearrange('b f v ... -> b (f v) ...', k)[:, sources_mask, ...] for k in (I, Kinv, R, t, time)]
+        # I, Kinv, R, t, time = [einx.rearrange('b f v ... -> b (f v) ...', k)[:, targets_mask, ...] for k in (I, Kinv, R, t, time)]
+        
         scene_batch, = args
+        
+        Kinv, R, t, time = [einx.rearrange('v f ... -> 1 (f v) ...', torch.stack([b.__dict__[k] for b in scene_batch.sources])) for k in ('Kinv', 'R', 't', 'time')]
+        I = einx.rearrange('v f ... -> 1 (f v) ...', torch.stack([b.view for b in scene_batch.sources]))
+        sources = SourceBatch(Kinv, R, t, time, I)
+        
+        Kinv, R, t, time = [einx.rearrange('v f ... -> 1 (f v) ...', torch.stack([b.__dict__[k] for b in scene_batch.queries])) for k in ('Kinv', 'R', 't', 'time')]
+        I = einx.rearrange('v f ... -> 1 (f v) ...', torch.stack([b.view for b in scene_batch.targets]))
+        targets = SourceBatch(Kinv, R, t, time, I)
+        
         latent_embeds = None # TODO
-        loss, latent_embeds, self.last_frames = self.model(scene_batch, latent_embeds)
+        loss, latent_embeds, self.last_frames = self.model(sources, targets, latent_embeds)
         
         return loss
     
