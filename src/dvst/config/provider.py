@@ -137,8 +137,10 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 N_enc=2,
                 # Number of layers in transformer decoder
                 N_dec=7,
-                # Dimension of all the vector representations used in the transformer models (dim for all vector inputs in transformers, not just the embedding vectors that will be the latent representations of scenes, idk why did i put such a confusing name but yeah)
+                # Dimension of all the vector representations used in the transformer models except attention (dim for all vector inputs in transformers, not just the embedding vectors that will be the latent representations of scenes, idk why did i put such a confusing name but yeah)
                 d_model=192,
+                # Dimension of vector representations in the attention space of transformer block (normally chosen to be equal to d_model)
+                d_attn=192,
                 # Number of attention heads in both encoder and decoder (n_heads should divide d_model)
                 n_heads=12,
                 # Expansion factor for mlp blocks after attention blocks in each transformer block (embeddings will be expanded to e_ff * d_model dimensions then contracted back to d_model dimensions)

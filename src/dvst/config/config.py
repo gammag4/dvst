@@ -34,6 +34,7 @@ class DVSTModelConfig:
     N_enc: int
     N_dec: int
     d_model: int
+    d_attn: int
     n_heads: int
     e_ff: int
     qk_norm: QKNormConfig
