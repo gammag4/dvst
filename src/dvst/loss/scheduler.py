@@ -31,6 +31,7 @@ class PerceptualLossScheduler(LossScheduler[PerceptualLoss]):
     #   'deep_to_shallow': Starts giving more weights to deeper layers and gradually goes to givin more weights to shallower ones in the end
     #   'shallow_to_deep': Starts giving more weights to shallower layers and gradually goes to givin more weights to deeper ones in the end
     def __init__(self, loss: PerceptualLoss, n_iter: int, beta: float=0.5, regime: str='constant'):
+        self.original_layer_weights = loss.layer_weights
         self.beta = beta
 
         if regime == 'deep_to_shallow':
@@ -46,5 +47,8 @@ class PerceptualLossScheduler(LossScheduler[PerceptualLoss]):
         super().__init__(loss, n_iter)
     
     def _update_loss(self):
+        if self.original_layer_weights.device != self.loss.layer_weights.device:
+            self.original_layer_weights = self.original_layer_weights.to(self.loss.layer_weights.device)
+        
         perc_idx = torch.arange(self.loss.layer_weights.shape[0], device=self.loss.layer_weights.device)
-        self.loss.layer_weights = self.r(self.beta, self.n_iter, self.iter, perc_idx)
+        self.loss.layer_weights = self.original_layer_weights * self.r(self.beta, self.n_iter, self.iter, perc_idx)
