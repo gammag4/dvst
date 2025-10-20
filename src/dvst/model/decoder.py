@@ -2,21 +2,22 @@ import torch
 import torch.nn as nn
 import einx
 
+from src.dvst.config import DVSTModelConfig
 from src.dvst.datasets.scene_dataset import QueryBatch
 from .transformer import Encoder
 from .pose_encoder import PoseEncoder
 
 
 class DVSTDecoder(nn.Module):
-    def __init__(self, config, pose_encoder: PoseEncoder):
+    def __init__(self, config: DVSTModelConfig, pose_encoder: PoseEncoder):
         super().__init__()
         
         self.config = config
         self.C = self.config.C
         self.p = self.config.p
-        self.d_model = self.config.d_model
         
         self.pose_encoder = pose_encoder
+        self.latent_norm = nn.LayerNorm(self.config.d_model)
         
         self.transformer = Encoder(
             self.config.N_dec,
@@ -32,7 +33,8 @@ class DVSTDecoder(nn.Module):
         )
         
         self.embeds_to_patch_embeds = nn.Sequential(
-            nn.Linear(in_features=self.d_model, out_features=self.C * self.p ** 2),
+            nn.LayerNorm(self.config.d_model),
+            nn.Linear(in_features=self.config.d_model, out_features=self.C * self.p ** 2),
             nn.Sigmoid()
         )
     
@@ -49,6 +51,7 @@ class DVSTDecoder(nn.Module):
         
         embeds = pose_embeds
         embeds = torch.concat([latent_embeds, embeds], dim=-2) # Concats embeddings with latent embeddings
+        embeds = self.latent_norm(embeds) # Transforms to latent space
         final_embeds = self.transformer(embeds) # Creates image embeddings using transformer
         final_embeds = final_embeds[..., latent_embeds.shape[-2]:, :] # Discards embeddings mapped from latent embeddings
         final_embeds = self.embeds_to_patch_embeds(final_embeds) # Maps embeddings to patch embeddings

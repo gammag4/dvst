@@ -15,14 +15,13 @@ class DVSTEncoder(nn.Module):
         super().__init__()
         
         self.config = config
-        self.n_lat = self.config.n_lat
-        self.d_model = self.config.d_model
         
-        self.start_latent_embeds = nn.Parameter(torch.zeros((self.config.n_lat, self.config.d_model)))
         self.pose_encoder = pose_encoder
+        self.start_latent_embeds = nn.Parameter(torch.zeros((self.config.n_lat, self.config.d_model)))
         self.latent_aggregator = partial(self.config.latent_aggregator, self)
-        
         self.latent_norm = nn.LayerNorm(self.config.d_model) #TODO check RMSNorm
+        # self.latent_norm = lambda x: x # TODO
+        
         self.transformer = Encoder(
             self.config.N_enc,
             self.config.d_model,

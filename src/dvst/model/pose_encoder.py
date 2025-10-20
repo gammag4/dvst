@@ -39,8 +39,11 @@ def compute_view_rays(vecs: torch.Tensor, Kinv: torch.Tensor, R: torch.Tensor, t
     return o, d
 
 
-def compute_plucker_rays(o: torch.Tensor, d: torch.Tensor):
+def compute_plucker_rays(o: torch.Tensor, d: torch.Tensor, use_plucker=True):
     # o, d: (B, 3, H, W)
+    
+    if not use_plucker:
+        return torch.concat([o, d], dim=-3)
     
     l = torch.cross(o, d, dim=-3)
     rays = torch.concat([d, l], dim=-3)
@@ -49,8 +52,11 @@ def compute_plucker_rays(o: torch.Tensor, d: torch.Tensor):
     return rays
 
 
-def compute_octaves(v: torch.Tensor, n_oct: int, dim=-1):
+def compute_octaves(v: torch.Tensor, n_oct: int | None, dim=-1):
     assert dim < 0, 'No positive dim allowed'
+    
+    if n_oct is None:
+        return v
     
     v = v * torch.pi
     tensors = [torch.sin(v), torch.cos(v)]
@@ -71,6 +77,7 @@ class PoseEncoder(nn.Module):
         self.n_oct = self.config.n_oct
         self.C = self.config.C
         self.p = self.config.p
+        self.use_plucker = self.config.use_plucker
         
         # This is the parameters that will represent the default image patch when there is no image to generate embeddings
         # TODO test two cases, one with parameter (this) and another with two different linear layers one for sources (w/ images) and another for target (w/o images)
@@ -78,8 +85,7 @@ class PoseEncoder(nn.Module):
         self.im_parameter = nn.Parameter(torch.zeros((self.C, self.p, self.p)))
         
         self.linear = nn.Linear(
-            in_features=(12 * self.n_oct + self.C) * self.p ** 2 + 2 * self.n_oct,
-            #in_features=(6 + self.C) * self.p ** 2 + 1, # Without octaves, just for testing
+            in_features=((6 + self.C) * self.p ** 2 + 1) if self.n_oct is None else ((12 * self.n_oct + self.C) * self.p ** 2 + 2 * self.n_oct),
             out_features=self.d_model
         )
     
@@ -121,22 +127,22 @@ class PoseEncoder(nn.Module):
         I = F.pad(I, pad, 'constant', 0) if I is not None else None
         
         o, d = self._compute_view_rays(Kinv, R, t, pad, hw)
-        plucker_rays = compute_plucker_rays(o, d) # (B, 6, H, W)
+        plucker_rays = compute_plucker_rays(o, d, self.use_plucker) # (B, 6, H, W)
         
-        # (B, 2 * 6 * n_oct, H, W)
+        # (B, 2 * 6 * n_oct, H, W) or (B, 6, H, W)
         plucker_octs = compute_octaves(plucker_rays, self.n_oct, dim=-3)
         #plucker_octs = torch.concat([plucker_octs, I * 2 - 1], dim=-3) if I is not None else plucker_octs # Transforming and concatenating image
         
         # Concatenating image with octaves and rearranging into patches
-        # (B, HW/p^2, (12 * n_oct + C) * p^2)
+        # (B, HW/p^2, (12 * n_oct + C) * p^2) or (B, HW/p^2, (6 + C) * p^2)
         if I is None:
             patches = einx.rearrange('... c1 (h p1) (w p2), c2 p1 p2 -> ... (h w) ((c1 + c2) p1 p2)', plucker_octs, self.im_parameter, p1=self.p, p2=self.p)
         else:
             patches = einx.rearrange('... c1 (h p1) (w p2), ... c2 (h p1) (w p2) -> ... (h w) ((c1 + c2) p1 p2)', plucker_octs, I, p1=self.p, p2=self.p)
         
-        time_octs = compute_octaves(time.unsqueeze(-1), self.n_oct, dim=-1) # (B, 2 * n_oct)
+        time_octs = compute_octaves(time.unsqueeze(-1), self.n_oct, dim=-1) # (B, 2 * n_oct) or (B, 1)
         
-        # (B, HW/p^2, (12 * n_oct + C) * p^2 + 2 * n_oct)
+        # (B, HW/p^2, (12 * n_oct + C) * p^2 + 2 * n_oct) or (B, HW/p^2, (6 + C) * p^2 + 1)
         embeds = einx.rearrange('... hw c1, ... c2 -> ... hw (c1 + c2)', patches, time_octs)
         embeds = self.linear(embeds)
         

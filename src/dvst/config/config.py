@@ -30,6 +30,7 @@ class DVSTModelConfig:
     p: int
     C: int
     n_oct: int
+    use_plucker: bool
 
     N_enc: int
     N_dec: int

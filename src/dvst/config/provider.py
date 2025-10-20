@@ -129,9 +129,10 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 # Number of color channels in each frame
                 C=3,
                 # Number of octaves for representing each of the 6 components from plucker rays and the time component
-                # If null, uses raw values instead
-                # TODO change code to not use octaves/duplicate coordinates if n_oct = 0
-                n_oct=6,
+                # If None, uses raw values instead
+                n_oct=None,
+                # Whether to use plucker rays or raw origin-direction vector pairs
+                use_plucker=False,
                 
                 # Number of layers in transformer encoder
                 N_enc=2,

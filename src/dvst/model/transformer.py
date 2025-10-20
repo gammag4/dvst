@@ -95,6 +95,7 @@ class Block(nn.Module):
         self.norm1 = nn.RMSNorm(d_model)
         self.attn = SelfAttn(d_model, d_attn, n_heads, use_qk_norm, qk_norm_eps, dropout, attn_op=attn_op)
         
+        self.norm2 = nn.RMSNorm(d_model)
         self.ff = nn.Sequential(
             nn.RMSNorm(d_model),
             FF(d_model, e_ff, dropout, act_layer)
@@ -102,7 +103,7 @@ class Block(nn.Module):
     
     def forward(self, X: torch.Tensor, attn_bias: torch.Tensor | xops.AttentionBias | None = None):
         X = self.attn(self.norm1(X), attn_bias=attn_bias) + X
-        X = self.ff(X) + X
+        X = self.ff(self.norm2(X)) + X
         return X
 
 
