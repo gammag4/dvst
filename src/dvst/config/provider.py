@@ -108,7 +108,8 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                     # Learning rate
                     lr=1e-4,
                     # AdamW betas
-                    betas=(0.9, 0.95),
+                    betas=(0.95, 0.99),
+                    weight_decay=0.01,
                     # TODO Some places report issues so check if this gives errors or nans
                     fused=True
                 ),

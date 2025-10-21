@@ -51,6 +51,7 @@ class DVSTModelConfig:
 class DVSTOptimizerConfig:
     lr: float
     betas: tuple[float, float]
+    weight_decay: float
     fused: bool
 
 

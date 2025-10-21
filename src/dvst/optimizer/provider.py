@@ -16,6 +16,7 @@ class DVSTOptimizerProvider(OptimizerProvider[DVSTOptimizerConfig, DVST]):
             params,
             lr=config.lr,
             betas=config.betas,
+            weight_decay=config.weight_decay,
             fused=config.fused
         )
         
