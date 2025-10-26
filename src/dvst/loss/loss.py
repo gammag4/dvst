@@ -26,7 +26,10 @@ class PerceptualLoss(nn.Module):
     
     def distance(self, x1, x2):
         # TODO test with norm 1 instead of 2 (other works like LVSM use norm 1)
-        return torch.norm(x1 - x2, p=2, dim=-1).sum() / x1.shape[-1] # norm / C * H * W
+        # TODO check which is better l1 or l2 (l1 is more like a mean of the per-pixel errors and l2 is more like a distance in the space of possible images)
+        # Using l1 for now so that it is equivalent to a score where 1 is furthest image possible (image of zeros vs image of ones) and 0 is closest possible (exact match)
+        # Then that score is used to know how well it is still maintaining information from previous frames in current latent embeds
+        return torch.norm(x1 - x2, p=1, dim=-1) / x1.shape[-1] # norm / C * H * W
     
     def forward_layer(self, x1, x2):
         x1, x2 = [einx.rearrange('... c h w -> ... (c h w)', k) for k in (x1, x2)]
@@ -36,6 +39,7 @@ class PerceptualLoss(nn.Module):
     def forward(self, input, target):
         losses = []
         
+        original_shape = input.shape[:-3]
         input, target = [einx.rearrange('... c h w -> (...) c h w', k) for k in (input, target)]
         
         x1 = F.center_crop(input, max(input.shape[-1], input.shape[-2]))
@@ -52,5 +56,6 @@ class PerceptualLoss(nn.Module):
         weights = self.layer_weights.to(input.device)
         weights = weights / weights.sum() # Normalizes weights
         
-        loss = (torch.stack(losses) * weights).sum()
-        return loss
+        losses = einx.dot('s b, s -> b', torch.stack(losses), weights)
+        losses = losses.reshape(original_shape)
+        return losses

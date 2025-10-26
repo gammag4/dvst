@@ -29,28 +29,28 @@ class DVST(nn.Module):
     def start_latent_embeds(self):
         return self.encoder.start_latent_embeds
     
-    def create_scene_latents(self, batch: SourceBatch | list[SourceBatch], latent_embeds: torch.Tensor | None = None) -> torch.Tensor:
+    def create_scene_latents(self, batch: SourceBatch | list[SourceBatch], latent_embeds: torch.Tensor | list[torch.Tensor] | None | list[None]) -> torch.Tensor:
         latent_embeds = self.encoder(batch, latent_embeds)
         return latent_embeds
     
-    def generate_frames(self, batch: QueryBatch | list[QueryBatch], latent_embeds: torch.Tensor | None) -> list[torch.Tensor] | torch.Tensor:
+    def generate_frames(self, batch: QueryBatch | list[QueryBatch], latent_embeds: torch.Tensor | list[torch.Tensor] | None | list[None]) -> list[torch.Tensor] | torch.Tensor:
         return self.decoder(batch, latent_embeds)
     
     # Shape: (B, F, C, H, W)
-    def forward(self, sources: SourceBatch | list[SourceBatch], targets: SourceBatch | list[SourceBatch], latent_embeds: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, dict]:
+    def forward(self, sources: SourceBatch | list[SourceBatch], targets: SourceBatch | list[SourceBatch], latent_embeds: torch.Tensor | list[torch.Tensor] | None | list[None]) -> tuple[torch.Tensor, torch.Tensor | list[torch.Tensor], dict]:
         latent_embeds = self.create_scene_latents(sources, latent_embeds)
         
         if isinstance(targets, list):
-            queries = [QueryBatch(t.Kinv, t.R, t.t, t.time, t.I.shape[-2:]) for t in targets]
+            queries = [QueryBatch(t.K, t.R, t.t, t.time, t.I.shape[-2:]) for t in targets]
             I2 = self.generate_frames(queries, latent_embeds)
-            loss = torch.sum(torch.stack([self.loss(t.I, res) for t, res in zip(targets, I2)]))
+            losses = [self.loss(t.I, res) for t, res in zip(targets, I2)]
             
             last_frames = {'gen': [i.detach() for i in I2], 'target': [t.I for t in targets]}
         else:
-            queries = QueryBatch(targets.Kinv, targets.R, targets.t, targets.time, targets.I.shape[-2:])
+            queries = QueryBatch(targets.K, targets.R, targets.t, targets.time, targets.I.shape[-2:])
             I2 = self.generate_frames(queries, latent_embeds)
-            loss = self.loss(targets.I, I2)
+            losses = self.loss(targets.I, I2)
             
             last_frames = {'gen': [i for i in I2.detach()], 'target': [i for i in targets.I]}
         
-        return loss, latent_embeds, last_frames
+        return losses, latent_embeds, last_frames

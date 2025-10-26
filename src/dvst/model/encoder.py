@@ -32,7 +32,8 @@ class DVSTEncoder(nn.Module):
             self.config.qk_norm.eps,
             self.config.train.dropout,
             nn.GELU,
-            self.config.attn_op
+            self.config.attn_op,
+            self.config.use_activation_checkpointing
         )
     
     def _process_latents(self, latent_embeds: torch.Tensor | None, batch_size: int) -> torch.Tensor:
@@ -42,14 +43,14 @@ class DVSTEncoder(nn.Module):
         
         return latent_embeds
     
-    def _forward_tensor(self, batch: SourceBatch, latent_embeds: torch.Tensor | None = None) -> torch.Tensor:
-        # Kinv: (B, F, 3, 3), R: (B, F, 3, 3), t: (B, F, 3), time: (B, F), I: (B, F, C, H, W)
-        Kinv, R, t, time, I = batch.Kinv, batch.R, batch.t, batch.time, batch.I
+    def _forward_tensor(self, batch: SourceBatch, latent_embeds: torch.Tensor | None) -> torch.Tensor:
+        # K: (B, F, 3, 3), R: (B, F, 3, 3), t: (B, F, 3), time: (B, F), I: (B, F, C, H, W)
+        K, R, t, time, I = batch.K, batch.R, batch.t, batch.time, batch.I
         
         latent_embeds = self._process_latents(latent_embeds, I.shape[0])
         
         # Computes frame embeddings for all videos and gets each embedding
-        pose_embeds, _ = self.pose_encoder(Kinv=Kinv, R=R, t=t, time=time, I=I) # (B, F, n_lat, d_model)
+        pose_embeds, _ = self.pose_encoder(K=K, R=R, t=t, time=time, I=I) # (B, F, n_lat, d_model)
         pose_embeds = einx.rearrange('b f ... -> f b ...', pose_embeds) # (F, B, ...)
         
         # TODO use something like RAG to choose which embeds to use from which frames/views and which order to use them in the context window
@@ -62,18 +63,18 @@ class DVSTEncoder(nn.Module):
         return latent_embeds
     
     # When the batch is a list instead of tensor
-    def _forward_list(self, batch: list[SourceBatch], latent_embeds: torch.Tensor | None = None) -> torch.Tensor:
-        latent_embeds = self._process_latents(latent_embeds, len(batch))
-        
+    def _forward_list(self, batch: list[SourceBatch], latent_embeds: list[torch.Tensor] | list[None]) -> list[torch.Tensor]:
         ls = []
         for b, l in zip(batch, latent_embeds):
-            b.Kinv, b.R, b.t, b.time, b.I, l = [k.unsqueeze(0) for k in (b.Kinv, b.R, b.t, b.time. b.I, l)]
-            ls.append(self._forward_tensor(b, l).squeeze(0))
+            b.K, b.R, b.t, b.time, b.I, l = [k for k in (b.K, b.R, b.t, b.time, b.I, l)]
+            ls.append(self._forward_tensor(b, l))
         
-        return torch.stack(ls)
+        return ls
     
-    def forward(self, batch: SourceBatch | list[SourceBatch], latent_embeds: torch.Tensor | None = None) -> torch.Tensor:
-        if isinstance(batch, list):
+    def forward(self, batch: SourceBatch | list[SourceBatch], latent_embeds: torch.Tensor | list[torch.Tensor] | None | list[None]) -> torch.Tensor | list[torch.Tensor]:
+        if isinstance(batch, list) and isinstance(latent_embeds, list):
             return self._forward_list(batch, latent_embeds)
+        if isinstance(batch, torch.Tensor) and isinstance(latent_embeds, torch.Tensor):
+            return self._forward_tensor(batch, latent_embeds)
         
-        return self._forward_tensor(batch, latent_embeds)
+        raise Exception(f'Wrong types for batch and latent_embeds: {(type(batch), type(latent_embeds))}')

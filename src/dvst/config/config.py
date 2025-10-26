@@ -12,6 +12,7 @@ from src.base.config import Config
 class DVSTDatasetConfig:
     path: str
     scene_batch_size: int
+    should_alternate_long_short_scenes: bool
 
 
 @dataclass
@@ -40,6 +41,7 @@ class DVSTModelConfig:
     e_ff: int
     qk_norm: QKNormConfig
     attn_op: tuple[AttentionFwOpBase, AttentionBwOpBase]
+    use_activation_checkpointing: bool
 
     n_lat: int
     latent_aggregator: Callable[[Module, Tensor, Tensor], Tensor]

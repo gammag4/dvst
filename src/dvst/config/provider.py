@@ -101,14 +101,17 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                         # TODO How many frames to break scenes into (use if using input scenes that are too big)
                         # When using this, after the specified number of frames, the latent_embedding has its grad graph removed and becomes a leaf tensor
                         #   Its gradients are not propagated back to the start_latent_embeds parameter, but this saves memory
-                        scene_batch_size=1
+                        scene_batch_size=2,
+                        # Whether the training should keep using half the scene_batch_size for long scenes and the other half for short ones
+                        # If enabled, scene_batch_size should be divisible by 2
+                        should_alternate_long_short_scenes = True
                     )
                 ),
                 optimizer=DVSTOptimizerConfig(
                     # Learning rate
-                    lr=1e-4,
+                    lr=1e-5,
                     # AdamW betas
-                    betas=(0.95, 0.99),
+                    betas=(0.99, 0.999),
                     weight_decay=0.01,
                     # TODO Some places report issues so check if this gives errors or nans
                     fused=True
@@ -118,31 +121,32 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                     loss='perceptual',
                     scheduler=DVSTLossSchedulerConfig(
                         # Beta for perceptual loss scheduler
-                        beta=0.6,
+                        beta=0.2,
                         # Regime to use for perceptual loss scheduler, can be either 'constant', 'deep_to_shallow' or 'shallow_to_deep'
-                        regime='constant'
+                        regime='constant',
+                        # regime='deep_to_shallow',
                     )
                 )
             ),
             model=DVSTModelConfig(
                 # Patch side length (the images will be broken into patches of size p x p)
-                p=16,
+                p=8,
                 # Number of color channels in each frame
                 C=3,
                 # Number of octaves for representing each of the 6 components from plucker rays and the time component
                 # If None, uses raw values instead
                 n_oct=None,
                 # Whether to use plucker rays or raw origin-direction vector pairs
-                use_plucker=False,
+                use_plucker=True,
                 
                 # Number of layers in transformer encoder
-                N_enc=2,
+                N_enc=8,
                 # Number of layers in transformer decoder
-                N_dec=7,
+                N_dec=16,
                 # Dimension of all the vector representations used in the transformer models except attention (dim for all vector inputs in transformers, not just the embedding vectors that will be the latent representations of scenes, idk why did i put such a confusing name but yeah)
-                d_model=192,
+                d_model=512,
                 # Dimension of vector representations in the attention space of transformer block (normally chosen to be equal to d_model)
-                d_attn=192,
+                d_attn=512,
                 # Number of attention heads in both encoder and decoder (n_heads should divide d_model)
                 n_heads=12,
                 # Expansion factor for mlp blocks after attention blocks in each transformer block (embeddings will be expanded to e_ff * d_model dimensions then contracted back to d_model dimensions)
@@ -152,14 +156,15 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                     # Enables QK-Norm
                     enabled=True,
                     # Epsilon for QK-Norm computation
-                    eps=1e-4
+                    eps=1e-12
                 ),
                 # Operation used for attention, should be from xops.fmha
                 attn_op=MemoryEfficientAttentionFlashAttentionOp,
+                use_activation_checkpointing=True,
                 
                 # Number of embedding vectors used as latent space representation for images
                 # TODO could compute this based on frame size and video size
-                n_lat=256,
+                n_lat=1024,
                 # The function that will be used to aggregate latents across frames. Should be one of the functions from src.model.latent_aggregators
                 latent_aggregator=residual_latent_aggregator,
                 

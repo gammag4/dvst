@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 import xformers.ops as xops
 import einx
 
@@ -108,8 +109,9 @@ class Block(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, n_blocks: int, d_model: int, d_attn: int, n_heads: int, e_ff: float, use_qk_norm: bool, qk_norm_eps: float, dropout: float, act_layer: nn.Module = nn.GELU, attn_op: xops.AttentionOp = xops.fmha.MemoryEfficientAttentionFlashAttentionOp):
+    def __init__(self, n_blocks: int, d_model: int, d_attn: int, n_heads: int, e_ff: float, use_qk_norm: bool, qk_norm_eps: float, dropout: float, act_layer: nn.Module = nn.GELU, attn_op: xops.AttentionOp = xops.fmha.MemoryEfficientAttentionFlashAttentionOp, use_activation_checkpointing: bool = False):
         super().__init__()
+        self.use_activation_checkpointing = use_activation_checkpointing
         
         self.blocks = nn.ModuleList([Block(d_model, d_attn, n_heads, e_ff, use_qk_norm, qk_norm_eps, dropout, act_layer, attn_op=attn_op) for _ in range(n_blocks)])
     
@@ -117,8 +119,13 @@ class Encoder(nn.Module):
         shape = X.shape
         X = einx.rearrange('... n d -> (...) n d', X)
         
+        if self.use_activation_checkpointing:
+            process_block = lambda block, X, attn_bias: checkpoint(block, X, attn_bias, use_reentrant=False)
+        else:
+            process_block = lambda block, X, attn_bias: block(X, attn_bias=attn_bias)
+        
         for block in self.blocks:
-            X = block(X, attn_bias=attn_bias)
+            X = process_block(block, X, attn_bias)
         
         X = X.reshape(shape)
         return X

@@ -30,23 +30,31 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
     
     def _create_datasets(self, config):
         # TODO Add MultiShapeNet dataset https://srt-paper.github.io/#dataset
+        #   Also add DySO dataset
         # TODO Add original RealEstate10K (google.github.io/realestate10k/download.html)
         #   Processing like pixelSplat: https://github.com/dcharatan/pixelsplat/blob/main/README.md#acquiring-datasets
         #   Script to download more easily (supposedly): https://github.com/Findeton/real-state-10k
         # when adding image datasets, concat them into tensor and return it as if it was the video
         datasets = [
+            PixelSplatRealEstate10KDataset(
+                path=os.path.join(config.path, 'realestate10k/train'),
+                resize_to=(64, 114),
+                n_sources=2,
+                n_target_frames=16
+            )
+        ]
+        
+        # TODO split dataset in a way where each distributed process receives roughly the same amount of batches
+        return CollectionSceneDataset(datasets)
+    
+    def create_long_sequence_train_dataset(self, config):
+        datasets = [
             PanopticDataset(
                 path=os.path.join(config.path, 'panoptic'),
                 resize_to=(64, 114),
                 n_sources=2,
-                n_targets=None
+                n_target_frames=16
             ),
-            PixelSplatRealEstate10KDataset(
-                path=os.path.join(config.path, 'realetate10k/train'),
-                resize_to=(64, 114),
-                n_sources=2,
-                n_targets=4
-            )
             # RawPlenopticDataset(
             #     os.path.join(config.path, 'plenoptic'),
             #     (64, 114), 2, None

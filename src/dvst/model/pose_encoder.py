@@ -21,17 +21,17 @@ def compute_pad(hw: tuple[int] | torch.Size, p: int):
     return hw_padded, pad
 
 
-def compute_view_rays(vecs: torch.Tensor, Kinv: torch.Tensor, R: torch.Tensor, t: torch.Tensor):
+def compute_view_rays(vecs: torch.Tensor, K: torch.Tensor, R: torch.Tensor, t: torch.Tensor):
     # Computes view rays (o, d)
     # vecs: meshgrid vecs, first dim is (x, y, z)
-    # vecs: (3, h, w), Kinv: (3, 3), R: (B, 3, 3), t: (B, 3)
+    # vecs: (3, h, w), K: (3, 3), R: (B, 3, 3), t: (B, 3)
     
     h, w = vecs.shape[-2:]
     
     o = -einx.dot('... h w, ... h -> ... w', R, t)  # -R^T t
     o = einx.rearrange('... c -> ... c h w', o, h=h, w=w) # repeat o for each vec # TODO repeating maybe not needed
     
-    d = einx.dot('... x1 c2, ... x1 c, c h w -> ... c2 h w', R, Kinv, vecs) # R^T K^-1 x_ij,cam
+    d = einx.dot('... x1 c2, ... x1 c, c h w -> ... c2 h w', R, K.inverse(), vecs) # R^T K^-1 x_ij,cam
     
     d = d / einx.sum('... [c] h w -> ... 3 h w', d * d).sqrt() # normalize d
     
@@ -89,10 +89,10 @@ class PoseEncoder(nn.Module):
             out_features=self.d_model
         )
     
-    def _compute_view_rays(self, Kinv: torch.Tensor, R: torch.Tensor, t: torch.Tensor, pad: tuple[int], hw: tuple[int] | torch.Size):
+    def _compute_view_rays(self, K: torch.Tensor, R: torch.Tensor, t: torch.Tensor, pad: tuple[int], hw: tuple[int] | torch.Size):
         # The forward function was split into two to display the view rays layer
         
-        device = Kinv.device
+        device = K.device
         pad_s = pad[-2::-2]
         
         # Creates vectors for each pixel in screen
@@ -104,7 +104,7 @@ class PoseEncoder(nn.Module):
         vecs = torch.meshgrid(*ranges, indexing='ij')
         vecs = torch.concat([torch.stack([*vecs[::-1]]), torch.ones((1, *vecs[0].shape), device=device)], dim=-3)
         
-        o, d = compute_view_rays(vecs, Kinv, R, t) # o, d: (B, 3, H, W)
+        o, d = compute_view_rays(vecs, K, R, t) # o, d: (B, 3, H, W)
         return o, d
     
     # I = images, HW = tuple with height and width
@@ -113,8 +113,8 @@ class PoseEncoder(nn.Module):
     # We assume images are already padded so that p divides H and W
     # We assume that the K matrix uses xy mapping instead of uv (sensor area is real in range [(0, 0), (h, w)], not [(0, 0), (1, 1)])
     # We assume images are in type float with colors in range 0-1
-    def forward(self, Kinv: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, I: torch.Tensor | None = None, hw: tuple[int] | torch.Size | None = None):
-        # I: (B, C, H, W), Kinv: (3, 3), R: (B, 3, 3), t: (B, 3), time: (B,), hw: (2,)
+    def create_embeds(self, K: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, I: torch.Tensor | None = None, hw: tuple[int] | torch.Size | None = None):
+        # I: (B, C, H, W), K: (3, 3), R: (B, 3, 3), t: (B, 3), time: (B,), hw: (2,)
         
         assert (I == None) ^ (hw == None), 'Either I or HW or both should be set'
         
@@ -126,7 +126,7 @@ class PoseEncoder(nn.Module):
         hw, pad = compute_pad(hw, self.p)
         I = F.pad(I, pad, 'constant', 0) if I is not None else None
         
-        o, d = self._compute_view_rays(Kinv, R, t, pad, hw)
+        o, d = self._compute_view_rays(K, R, t, pad, hw)
         plucker_rays = compute_plucker_rays(o, d, self.use_plucker) # (B, 6, H, W)
         
         # (B, 2 * 6 * n_oct, H, W) or (B, 6, H, W)
@@ -144,6 +144,17 @@ class PoseEncoder(nn.Module):
         
         # (B, HW/p^2, (12 * n_oct + C) * p^2 + 2 * n_oct) or (B, HW/p^2, (6 + C) * p^2 + 1)
         embeds = einx.rearrange('... hw c1, ... c2 -> ... hw (c1 + c2)', patches, time_octs)
+        
+        return embeds, pad # (B, n_lat, d_model), (4,)
+
+    # I = images, HW = tuple with height and width
+    # Set both if image has been resized, specifying original image height and width in HW
+    # We assume images are already resized (always resize them maintaining aspect ratio)
+    # We assume images are already padded so that p divides H and W
+    # We assume that the K matrix uses xy mapping instead of uv (sensor area is real in range [(0, 0), (h, w)], not [(0, 0), (1, 1)])
+    # We assume images are in type float with colors in range 0-1
+    def forward(self, K: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, I: torch.Tensor | None = None, hw: tuple[int] | torch.Size | None = None):
+        embeds, pad = self.create_embeds(K, R, t, time, I, hw)
         embeds = self.linear(embeds)
         
         return embeds, pad # (B, n_lat, d_model), (4,)

@@ -98,8 +98,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
     
     def state_dict(self):
         state_dict = {
-            'train_data': self.train_data.state_dict(),
-            'val_data': self.val_data.state_dict(),
             'base_model': self.base_model.state_dict(),
             'loss_scheduler': self.loss_scheduler.state_dict(),
             'lr_scheduler': self.lr_scheduler.state_dict(),
@@ -114,8 +112,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         return state_dict
     
     def load_state_dict(self, state_dict):
-        self.train_data.load_state_dict(state_dict['train_data'])
-        self.val_data.load_state_dict(state_dict['val_data'])
         self.base_model.load_state_dict(state_dict['base_model'])
         self.loss_scheduler.load_state_dict(state_dict['loss_scheduler'])
         self.lr_scheduler.load_state_dict(state_dict['lr_scheduler'])
@@ -159,7 +155,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         return self.grad_manager.should_retry_batch
     
     # This method is automatically called by self._run_pass() and should not be called by the user
-    # It receives the same *args sent to self._run_pass() by self._run_dataset_batch() and should do one forward pass, returning the loss of that pass
+    # It receives the same *args sent to self._run_pass() by self._run_epoch() and should do one forward pass, returning the loss of that pass
     # This method also has to call ddp model forward, can't call model.module functions directly
     # See https://discuss.pytorch.org/t/is-it-ok-to-use-methods-other-than-forward-in-ddp/176509
     @abstractmethod
@@ -238,14 +234,8 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         
         self._try_save_checkpoint()
     
-    # This method receives one batch directly from the dataset and should train the model with it, should not be called by the used
-    # It needs to call self._run_pass() for each training pass it needs to run (forward and backward), where *args will be the args it will pass down to self._run_forward() when calling it
-    @abstractmethod
-    def _run_dataset_batch(self, batch):
-        pass
-    
     # This method is called in each epoch with self.current_epoch as its epoch number
-    # It should call self._run_dataset_batch(batch) for each batch from the dataset
+    # It needs to call self._run_pass() for each training pass it needs to run (forward and backward) for each batch, where *args will be the args it will pass down to self._run_forward() when calling it
     @abstractmethod
     def _run_epoch(self):
         pass
@@ -254,10 +244,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.logger.log({'gpu': self.rank})
         
         for self.current_epoch in range(self.current_epoch, self.max_epochs):
-            # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
-            # See: https://docs.pytorch.org/docs/stable/data.html
-            self.train_data.sampler.set_epoch(self.current_epoch)
-            
             self.logger.log({'epoch': self.current_epoch})
             
             self._run_epoch()
@@ -267,16 +253,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         )
     
     async def _run(self):
-        dataset_config = self.config.train.data.dataset
-        
-        await self.dataset_provider.download_dataset(dataset_config)
-        
-        train_data = self.dataset_provider.create_train_dataset(dataset_config)
-        self.train_data = self._create_dataloader(train_data)
-        
-        val_data = self.dataset_provider.create_val_dataset(dataset_config)
-        self.val_data = self._create_dataloader(val_data)
-        
         loss, self.loss_scheduler = self.loss_provider.create_loss(self.config.train.loss, self.total_steps)
         model = self.model_provider.create_model(self.config.model, loss)
         self.optimizer, self.lr_scheduler = self.optimizer_provider.create_optimizer(self.config.train.optimizer, model, self.total_steps)
@@ -331,6 +307,8 @@ class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig,
         state_dict = super().state_dict()
         
         state_dict['current_batch'] = self.current_batch
+        state_dict['train_data'] = self.train_data.state_dict()
+        state_dict['val_data'] = self.val_data.state_dict()
         
         return state_dict
     
@@ -338,16 +316,32 @@ class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig,
     def load_state_dict(self, state_dict):
         super().load_state_dict(state_dict)
         
+        self.train_data.load_state_dict(state_dict['train_data'])
+        self.val_data.load_state_dict(state_dict['val_data'])
         self.current_batch = state_dict['current_batch']
     
-    def _run_dataset_batch(self, batch):
-        self._run_pass(batch)
-    
     def _run_epoch(self):
+        # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
+        # See: https://docs.pytorch.org/docs/stable/data.html
+        self.train_data.sampler.set_epoch(self.current_epoch)
+        
         for batch in self.train_data:
             self.logger.log({'batch': self.current_batch})
             
-            self._run_dataset_batch(batch)
+            self._run_pass(batch)
             self.current_batch += 1
         
         self.current_batch = 0
+    
+    async def _run(self):
+        dataset_config = self.config.train.data.dataset
+        
+        await self.dataset_provider.download_dataset(dataset_config)
+        
+        train_data = self.dataset_provider.create_train_dataset(dataset_config)
+        self.train_data = self._create_dataloader(train_data)
+        
+        val_data = self.dataset_provider.create_val_dataset(dataset_config)
+        self.val_data = self._create_dataloader(val_data)
+        
+        return await super()._run()

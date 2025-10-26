@@ -29,7 +29,8 @@ class DVSTDecoder(nn.Module):
             self.config.qk_norm.eps,
             self.config.train.dropout,
             nn.GELU,
-            self.config.attn_op
+            self.config.attn_op,
+            self.config.use_activation_checkpointing
         )
         
         self.embeds_to_patch_embeds = nn.Sequential(
@@ -38,11 +39,11 @@ class DVSTDecoder(nn.Module):
             nn.Sigmoid()
         )
     
-    def _forward_tensor(self, batch: QueryBatch, latent_embeds: torch.Tensor | None = None) -> torch.Tensor:
-        # Kinv: (B, F, 3, 3), R: (B, F, 3, 3), t: (B, F, 3), time: (B, F), hw: (2,)
-        Kinv, R, t, time, hw = batch.Kinv, batch.R, batch.t, batch.time, batch.hw
+    def _forward_tensor(self, batch: QueryBatch, latent_embeds: torch.Tensor | None) -> torch.Tensor:
+        # K: (B, F, 3, 3), R: (B, F, 3, 3), t: (B, F, 3), time: (B, F), hw: (2,)
+        K, R, t, time, hw = batch.K, batch.R, batch.t, batch.time, batch.hw
         
-        pose_embeds, pad = self.pose_encoder(Kinv=Kinv, R=R, t=t, time=time, hw=hw) # Computes query embeddings, (B, F, n_lat, d_model)
+        pose_embeds, pad = self.pose_encoder(K=K, R=R, t=t, time=time, hw=hw) # Computes query embeddings, (B, F, n_lat, d_model)
         pose_embeds = einx.rearrange('b f ... -> f b ...', pose_embeds) # (F, B, ...)
         
         latent_embeds = einx.rearrange('... -> f ...', latent_embeds, f=pose_embeds.shape[0])
@@ -63,10 +64,10 @@ class DVSTDecoder(nn.Module):
         return I
     
     # When the batch is a list instead of tensor
-    def _forward_list(self, batch: list[QueryBatch], latent_embeds: torch.Tensor | None = None) -> list[torch.Tensor]:
+    def _forward_list(self, batch: list[QueryBatch], latent_embeds: torch.Tensor | list[torch.Tensor] | None | list[None]) -> list[torch.Tensor]:
         Is = []
         for b, l in zip(batch, latent_embeds):
-            b.Kinv, b.R, b.t, b.time, b.hw = b.Kinv, b.R, b.t, b.time. b.hw
+            b.K, b.R, b.t, b.time, b.hw = b.K, b.R, b.t, b.time, b.hw
             Is.append(self._forward_tensor(b, l))
         
         return Is
