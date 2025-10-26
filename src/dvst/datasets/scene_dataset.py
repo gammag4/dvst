@@ -6,16 +6,6 @@ from torchcodec.decoders import VideoDecoder
 import torchvision.transforms.v2.functional as v2f
 
 
-def process_view(view, resize_to):
-    if resize_to is not None:
-        view = v2f.resize(view, resize_to)
-
-    if not view.dtype.is_floating_point:
-        view = view / 255.0
-    
-    return view
-
-
 def process_K(K, hw):
     # Takes into account resized images
     h_real, w_real = hw
@@ -24,6 +14,61 @@ def process_K(K, hw):
     K[..., 0, 0], K[..., 1, 1] = K[..., 0, 0] * (w_real / w), K[..., 1, 1] * (h_real / h) # c_x, c_y
     
     return K
+
+
+def add_regularization_noise(K, R, t, time, noise_amount):
+    for k1, k2 in [(0, 0), (0, 2), (1, 1), (1, 2)]:
+        K[..., k1, k2] = K[..., k1, k2] * (1 + (2 * torch.rand(K.shape[:-2], device=K.device) - 1) * noise_amount)
+    
+    R = R * (1 - noise_amount) + (2 * torch.rand(R.shape, device=R.device) - 1) * noise_amount
+    R1, _, R2 = torch.linalg.svd(R, full_matrices=False)
+    R = R1 @ R2
+    
+    # TODO not properly normalized
+    # Since there are no definite bounds, we create noise relative to the standard deviation of the samples
+    magnitudes = t.norm(p=2, dim=-1)
+    t = t + torch.randn(t.shape, device=t.device) * magnitudes.std() * noise_amount
+    
+    # TODO maybe also scale intervals by some small random amount close to 1
+    # also maybe shift times by some scalar
+    if time.shape[-1] == 1:
+        # TODO not properly normalized
+        time = time + torch.randn(time.shape, device=time.device) * noise_amount
+    else:
+        time_view = time.reshape(-1, time.shape[-1])
+        time_interval = (time_view[0, 1:] - time_view[0, :-1]).mean()
+        # time_interval = time_view[0, 1] - time_view[0, 0] # TODO
+        time = time + (2 * torch.rand(time.shape, device=time.device) - 1) * noise_amount * time_interval
+    
+    return K, R, t, time
+
+
+def process_data(K, R, t, time, hw, resize_to):
+    hw = hw if resize_to is None else resize_to
+    K = process_K(K, hw)
+    
+    noise_amount = 0.002 # TODO
+    K, R, t, time = add_regularization_noise(K, R, t, time, noise_amount)
+    
+    return K, R, t, time
+
+
+def add_regularization_noise_I(I, noise_amount):
+    I = I * (1 - noise_amount) + torch.rand(I.shape, device=I.device) * noise_amount
+    return I
+
+
+def process_I(I, resize_to):
+    if resize_to is not None:
+        I = v2f.resize(I, resize_to)
+
+    if not I.dtype.is_floating_point:
+        I = I / 255.0
+    
+    noise_amount = 0.002 # TODO
+    I = add_regularization_noise_I(I, noise_amount)
+    
+    return I
 
 
 class QueryBatch:
@@ -66,7 +111,7 @@ class SceneBatch:
             I2 = I[:, start_frame:end_frame, ...][sources_perm][sources_slice]
         else:
             I2 = torch.stack([i[start_frame:end_frame] for i in I])[sources_perm][sources_slice]
-        I2 = process_view(I2, resize_to)
+        I2 = process_I(I2, resize_to)
         
         K2, R2, t2, time2, I2 = [k.permute(1, 0, *range(2, len(k.shape))).flatten(0, 1).unsqueeze(0) for k in (K2, R2, t2, time2, I2)]
         sources = SourceBatch(K2, R2, t2, time2, I2)
@@ -82,7 +127,7 @@ class SceneBatch:
             I2 = I[[views, frames]]
         else:
             I2 = torch.stack([I[int(v)][int(f)] for v, f in zip(views, frames)])
-        I2 = process_view(I2, resize_to)
+        I2 = process_I(I2, resize_to)
         
         K2, R2, t2, time2, I2 = [k.unsqueeze(0) for k in (K2, R2, t2, time2, I2)]
         targets = SourceBatch(K2, R2, t2, time2, I2)

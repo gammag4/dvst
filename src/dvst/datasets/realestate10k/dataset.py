@@ -5,7 +5,7 @@ from torchvision.io import decode_image
 
 from src.base.utils import json_load
 
-from src.dvst.datasets.scene_dataset import StaticScene, SceneData, SceneDataset, process_K
+from src.dvst.datasets.scene_dataset import StaticScene, SceneData, SceneDataset, process_data
 
 
 class PixelSplatRE10KSceneData(SceneData):
@@ -36,7 +36,8 @@ class PixelSplatRE10KSceneData(SceneData):
         # (v f ...) where `f = 1`
         K, R, t, time, I = [k.unsqueeze(1) for k in (K, R, t, time, I)]
         
-        K = process_K(K, I.shape[-2:])
+        hw = I.shape[-2:]
+        K, R, t, time = process_data(K, R, t, time, hw, self.resize_to)
         
         return StaticScene.from_tensors(
             dataset_name='realestate10k',

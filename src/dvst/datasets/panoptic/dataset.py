@@ -6,7 +6,7 @@ from torchcodec.decoders import VideoDecoder
 
 from src.base.utils import json_load
 
-from src.dvst.datasets.scene_dataset import VideoDecoderScene, SceneData, SceneDataset, process_K
+from src.dvst.datasets.scene_dataset import VideoDecoderScene, SceneData, SceneDataset, process_data
 
 
 class PanopticSceneData(SceneData):
@@ -29,7 +29,8 @@ class PanopticSceneData(SceneData):
         time = torch.arange(self.n_frames, device=device) / self.fps
         time = time.unsqueeze(0).repeat((len(I), 1))
         
-        K = process_K(K, I[0].shape[-2:] if self.resize_to is None else self.resize_to)
+        hw = I[0][0].shape[-2:]
+        K, R, t, time = process_data(K, R, t, time, hw, self.resize_to)
         
         return VideoDecoderScene(
             dataset_name='panoptic',
