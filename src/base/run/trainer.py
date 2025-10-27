@@ -213,7 +213,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         if self.loss_scheduler is not None:
             self.loss_scheduler.step()
         
-        if self.lr_scheduler is not None:
+        if self.lr_scheduler is not None and not self.grad_manager.skipped_last:
             self.lr_scheduler.step()
     
     # Use this method to run one forward/backward pass for a generic model
