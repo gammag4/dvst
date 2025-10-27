@@ -15,7 +15,7 @@ from src.dvst.model import DVST
 
 def compute_params_metrics(params_list):
     if isinstance(params_list, torch.Tensor):
-        return torch.stack([params_list.norm(2), params_list.mean(), params_list.std(), params_list.max(), params_list.min()])
+        return torch.stack([params_list.norm(2), params_list.mean(), params_list.std(), params_list.max(), params_list.min()]).cpu()
     
     norm = torch.stack([p.norm(2) for p in params_list]).square().sum().sqrt()
     
@@ -29,7 +29,7 @@ def compute_params_metrics(params_list):
     p_max = torch.stack([p.max() for p in params_list]).max()
     p_min = torch.stack([p.min() for p in params_list]).min()
     
-    return torch.stack([norm, mean, std, p_max, p_min])
+    return torch.stack([norm, mean, std, p_max, p_min]).cpu()
 
 
 class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVSTLossConfig, DVST]):
@@ -135,7 +135,7 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         
         if isinstance(self.base_model.loss, PerceptualLoss):
             loss = cast(PerceptualLoss, self.base_model.loss)
-            self.logger.log({'perceptual_weights': loss.layer_weights})
+            self.logger.log({'perceptual_weights': loss.layer_weights.cpu()})
         
         self.logger.log({'optimizer_param_groups_lrs': [p['lr'] for p in self.optimizer.param_groups]})
         
