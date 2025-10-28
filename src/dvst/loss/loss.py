@@ -53,7 +53,7 @@ class PerceptualLoss(nn.Module):
         
         losses.append(self.distance(self.classifier_layer(x1), self.classifier_layer(x2)))
         
-        weights = self.layer_weights.to(input.device)
+        weights = self.layer_weights.to(input.device, non_blocking=True)
         weights = weights / weights.sum() # Normalizes weights
         
         losses = einx.dot('s b, s -> b', torch.stack(losses), weights)

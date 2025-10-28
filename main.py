@@ -14,6 +14,10 @@ async def main(
     run_provider: RunProvider
 ):
     config = config_provider.get_default_config()
+    
+    # Use torch.accelerator.current_stream.synchronize() in places with non_blocking=True when sending from CPU to accelerator or just disable it
+    assert 'cuda' in config.setup.distributed.device, 'Tensor synchronization code not implemented for non-CUDA devices, either implement code or use CUDA devices only'
+    
     trainer = run_provider.create_trainer(config)
     await trainer.run()
 

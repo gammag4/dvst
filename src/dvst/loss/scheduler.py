@@ -48,7 +48,7 @@ class PerceptualLossScheduler(LossScheduler[PerceptualLoss]):
     
     def _update_loss(self):
         if self.original_layer_weights.device != self.loss.layer_weights.device:
-            self.original_layer_weights = self.original_layer_weights.to(self.loss.layer_weights.device)
+            self.original_layer_weights = self.original_layer_weights.to(self.loss.layer_weights.device, non_blocking=True)
         
         perc_idx = torch.arange(self.loss.layer_weights.shape[0], device=self.loss.layer_weights.device)
         self.loss.layer_weights = self.original_layer_weights * self.r(self.beta, self.n_iter, self.iter, perc_idx)

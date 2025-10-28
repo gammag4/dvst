@@ -21,14 +21,14 @@ class PixelSplatRE10KSceneData(SceneData):
         
         scene_name = scene['key']
         # times = scene['timestamps'] / 1000000 # From microseconds to seconds
-        I = torch.stack([decode_image(i) for i in scene['images']]).to(device)
-        cameras = scene['cameras'].to(device)
+        I = torch.stack([decode_image(i) for i in scene['images']]).to(device, non_blocking=True)
+        cameras = scene['cameras'].to(device, non_blocking=True)
         
         fx, fy, px, py = [cameras[:, i] for i in range(4)]
         K = torch.zeros((fx.shape[0], 3, 3), device=device)
         K[:, 0, 0], K[:, 1, 1], K[:, 0, 2], K[:, 1, 2], K[:, 2, 2] = fx, fy, px, py, 1
         
-        T = cameras[:, 6:].reshape((-1, 3, 4)).to(device)
+        T = cameras[:, 6:].reshape((-1, 3, 4)).to(device, non_blocking=True)
         R, t = T[:, :, :3], T[:, :, 3]
         
         time = torch.zeros(I.shape[0], device=device)

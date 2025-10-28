@@ -148,6 +148,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         
         # Ensures only saves from first GPU to prevent redundancy
         if self.rank == 0 and self.current_global_pass % self.config.train.save_every_passes == 0:
+            torch.accelerator.synchronize(self.device)
             torch.save(self.state_dict(), checkpoint_path)
             self.logger.message(f'Saving training checkpoint at {checkpoint_path}')
     
@@ -199,7 +200,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # Updates the scale for next iteration
         self.grad_manager.update()
         
-        self.logger.log({'loss': loss.detach().cpu()})
+        self.logger.log({'loss': loss.detach().to('cpu', non_blocking=True)})
     
     # This method is run after each pass to update stuff
     def _step(self):
@@ -229,6 +230,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.current_global_pass += 1
         
         if self.rank == 0 and self.current_global_pass % self.config.train.log_every_passes == 0:
+            torch.accelerator.synchronize(self.device)
             self.logger.display_current()
         self.logger.update()
         
@@ -260,7 +262,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # We wrap the model with DDP, giving the GPU IDs where the model is (only in local_rank in this case)
         # This also works for multi-GPU models, but in that case, device_ids and output_device must NOT be set,
         # these should be sent to the proper devices by either the application or by model.forward()
-        self.model = DDP(model.to(self.device), device_ids=[self.local_rank])
+        self.model = DDP(model.to(self.device, non_blocking=True), device_ids=[self.local_rank])
         
         # Gradient scaler for AMP (probably not needed if using bfloat16)
         self.grad_manager = GradManager(
