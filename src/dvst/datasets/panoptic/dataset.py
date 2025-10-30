@@ -6,7 +6,7 @@ from torchcodec.decoders import VideoDecoder
 
 from src.base.utils import json_load
 
-from src.dvst.datasets.scene_dataset import VideoDecoderScene, SceneData, SceneDataset, process_data
+from src.dvst.datasets.scene_dataset import VideoScene, SceneData, IndexableSceneDataset, process_data
 
 
 class PanopticSceneData(SceneData):
@@ -32,7 +32,7 @@ class PanopticSceneData(SceneData):
         hw = I[0][0].shape[-2:]
         K, R, t, time = process_data(K, R, t, time, hw, self.resize_to)
         
-        return VideoDecoderScene(
+        return VideoScene(
             dataset_name='panoptic',
             scene_name=self.scene_name,
             n_frames=self.n_frames,
@@ -47,7 +47,7 @@ class PanopticSceneData(SceneData):
         )
 
 
-class PanopticDataset(SceneDataset):
+class PanopticDataset(IndexableSceneDataset):
     def __init__(self, path, resize_to: tuple[int, int] | None, n_sources: int, n_target_frames: int):
         super().__init__()
         self.path = path
@@ -95,7 +95,7 @@ class PanopticDataset(SceneDataset):
     
     @property
     def n_scenes(self):
-        return len(self.scenes)
+        return len(self)
     
     def get_n_batches(self, batch_size):
         return sum([math.ceil(s.n_frames / batch_size) for s in self.scenes])

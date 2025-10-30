@@ -1,5 +1,6 @@
+from itertools import chain
 import random
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, IterableDataset, get_worker_info
 from abc import ABC, abstractmethod
 import torch
 from torchcodec.decoders import VideoDecoder
@@ -100,7 +101,7 @@ class SceneBatch:
     @staticmethod
     def rand_sampling_from_tensors(K: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, I: torch.Tensor | list[VideoDecoder], n_sources: int, n_target_frames: int, start_frame: int, end_frame: int, num_targets_back: int, is_last: bool, resize_to: tuple[int, int] | None, sources_perm=None):
         # Randomly selects views
-        num_views = I.shape[0] if isinstance(I, torch.Tensor) else len(I)
+        num_views = len(I)
         sources_perm = torch.randperm(num_views) if sources_perm is None else sources_perm
         
         # Only gets views from the current as source
@@ -203,8 +204,8 @@ class StaticScene(DefaultScene):
         )
 
 
-class VideoDecoderScene(DefaultScene):
-    def __init__(self, dataset_name: str, scene_name: str, n_frames: int, K: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, I: list[VideoDecoder], n_sources: int, n_target_frames: int, resize_to: tuple[int, int] | None):
+class VideoScene(DefaultScene):
+    def __init__(self, dataset_name: str, scene_name: str, n_frames: int, K: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, I: list[VideoDecoder] | torch.Tensor, n_sources: int, n_target_frames: int, resize_to: tuple[int, int] | None):
         super().__init__(dataset_name, scene_name, n_frames)
         self.K = K # v f 3 3
         self.R = R # v f 3 3
@@ -240,12 +241,8 @@ class SceneData(ABC):
         pass
 
 
-class SceneDataset(ABC, Dataset[SceneData]):
+class SceneDataset(ABC):
     def __init__(self):
-        pass
-    
-    @abstractmethod
-    def __getitem__(self, index) -> SceneData:
         pass
     
     @property
@@ -261,6 +258,16 @@ class SceneDataset(ABC, Dataset[SceneData]):
     @abstractmethod
     def get_n_batches(self, batch_size: int | None):
         pass
+
+
+class IterableSceneDataset(SceneDataset, IterableDataset[SceneData]):
+    pass
+
+
+class IndexableSceneDataset(IterableSceneDataset, Dataset[SceneData]):
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
 
 
 # TODO maybe decouple this into simple collection for generic datasets?
@@ -281,6 +288,12 @@ class CollectionSceneDataset(SceneDataset):
     
     def __len__(self):
         return sum((len(d) for d in self.datasets))
+
+
+class IndexableCollectionSceneDataset(CollectionSceneDataset, Dataset[SceneDataset]):
+    def __init__(self, datasets):
+        super().__init__(datasets)
+        self.datasets: list[IndexableSceneDataset]
     
     def __getitem__(self, i):
         for d in self.datasets:
@@ -289,3 +302,55 @@ class CollectionSceneDataset(SceneDataset):
                 return d[i]
             
             i -= l
+
+
+class IterableCollectionSceneDataset(CollectionSceneDataset, IterableDataset[SceneDataset]):
+    def __init__(self, datasets):
+        super().__init__(datasets)
+    
+    def __iter__(self):
+        return chain(*self.datasets)
+
+
+class DistIterableDataset(IterableDataset):
+    def __init__(self, dataset, rank, world_size):
+        super().__init__()
+        self.dataset = dataset
+        self.rank = rank
+        self.world_size = world_size
+        self.iterable = isinstance(dataset, IterableDataset)
+    
+    def __len__(self):
+        return len(self.dataset)
+    
+    def __iter__(self):
+        worker_info = get_worker_info()
+        
+        total_workers = self.world_size * (worker_info.num_workers if worker_info else 1)
+        current_worker = self.rank * worker_info.num_workers + worker_info.id if worker_info else self.rank
+        
+        if self.iterable:
+            for i, d in enumerate(self.dataset):
+                if (i + current_worker) % total_workers == 0:
+                    yield d
+        else:
+            for i in range(len(self.dataset)):
+                if (i + current_worker) % total_workers == 0:
+                    yield self.dataset[i]
+
+
+class DistIterableSceneDataset(DistIterableDataset, SceneDataset):
+    def __init__(self, dataset: SceneDataset, rank, world_size):
+        super().__init__(dataset, rank, world_size)
+        self.dataset: SceneDataset
+    
+    @property
+    def n_frames(self):
+        return self.dataset.n_frames
+    
+    @property
+    def n_scenes(self):
+        return self.dataset.n_scenes
+    
+    def get_n_batches(self, batch_size: int | None):
+        return self.dataset.get_n_batches(batch_size)

@@ -84,7 +84,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
             # Shuffle should be defined in sampler when using DistributedSampler
             shuffle=False,
             # Sampler that sends different batches to different gpus
-            sampler=DistributedSampler(dataset, shuffle=config.shuffle),
+            # sampler=DistributedSampler(dataset, shuffle=config.shuffle), # TODO randomly sample iterable datasets instead
             num_workers=config.num_workers,
             prefetch_factor=config.prefetch_factor,
             persistent_workers=False, # TODO check
@@ -288,7 +288,8 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # Starts from checkpoint if exists
         self._try_load_checkpoint()
         
-        print_model_stats(self.model)
+        if self.rank == 0:
+            print_model_stats(self.model)
         
         return self._train()
 
@@ -333,7 +334,6 @@ class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig,
     def _run_epoch(self):
         # Setting sampler epoch at beginning of each epoch before creating DataLoader iterator is necessary for shuffling to work in distributed mode across multiple epochs
         # See: https://docs.pytorch.org/docs/stable/data.html
-        self.train_data.sampler.set_epoch(self.current_epoch)
         
         for batch in self.train_data:
             self.logger.log({'batch': self.current_batch})
@@ -346,7 +346,11 @@ class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig,
     async def _run(self):
         dataset_config = self.config.train.data.dataset
         
-        await self.dataset_provider.download_dataset(dataset_config)
+        # Only downloads once per node
+        if self.rank == 0:
+            await self.dataset_provider.download_dataset(dataset_config)
+        
+        dist.barrier()
         
         train_data = self.dataset_provider.create_train_dataset(dataset_config)
         self.train_data = self._create_dataloader(train_data)

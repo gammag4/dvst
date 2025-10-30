@@ -2,6 +2,7 @@ import gc
 from typing import cast
 import random
 import torch
+import torch.distributed as dist
 import einx
 from easydict import EasyDict as edict
 
@@ -153,8 +154,6 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
     
     def _run_epoch(self):
         # Keeps getting scenes from two datasets, one with long scenes (to learn to store longer scenes) and another with short scenes (to give more variability and prevent it from overfitting to the longer scenes)
-        self.train_data.sampler.set_epoch(self.current_epoch)
-        self.long_sequence_train_data.sampler.set_epoch(self.current_epoch)
         
         data_it = iter(self.train_data)
         long_data_it = iter(self.long_sequence_train_data)
@@ -249,7 +248,11 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         if dataset_config.should_alternate_long_short_scenes:
             assert dataset_config.scene_batch_size % 2 == 0, 'scene_batch_size should be even'
         
-        await self.dataset_provider.download_dataset(dataset_config)
+        # Only downloads once per node
+        if self.rank == 0:
+            await self.dataset_provider.download_dataset(dataset_config)
+        
+        dist.barrier()
         
         long_sequence_train_data = self.dataset_provider.create_long_sequence_train_dataset(dataset_config) # TODO
         self.long_sequence_train_data = self._create_dataloader(long_sequence_train_data)

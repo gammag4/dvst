@@ -5,7 +5,7 @@ from torchvision.io import decode_image
 
 from src.base.utils import json_load
 
-from src.dvst.datasets.scene_dataset import StaticScene, SceneData, SceneDataset, process_data
+from src.dvst.datasets.scene_dataset import StaticScene, SceneData, IndexableSceneDataset, process_data
 
 
 class PixelSplatRE10KSceneData(SceneData):
@@ -53,7 +53,7 @@ class PixelSplatRE10KSceneData(SceneData):
         )
 
 
-class PixelSplatRealEstate10KDataset(SceneDataset):
+class PixelSplatRealEstate10KDataset(IndexableSceneDataset):
     def __init__(self, path, resize_to: tuple[int, int] | None, n_sources: int, n_target_frames: int):
         super().__init__()
         self.path = path
@@ -61,10 +61,7 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
         self.n_sources = n_sources
         self.n_target_frames = n_target_frames
         
-        scenes = json_load(os.path.join(self.path, 'data.json')).scenes
-        
-        self.scenes = scenes
-        self._n_frames = sum([s.n_frames for s in scenes])
+        self.scenes = json_load(os.path.join(self.path, 'data.json')).scenes
     
     def __len__(self):
         return len(self.scenes)
@@ -74,18 +71,18 @@ class PixelSplatRealEstate10KDataset(SceneDataset):
     
     @property
     def n_frames(self):
-        return len(self.scenes)
+        return len(self)
     
     @property
     def n_scenes(self):
-        return len(self.scenes)
+        return len(self)
     
     def get_n_batches(self, batch_size):
         return sum([math.ceil(s.n_frames / batch_size) for s in self.scenes])
 
 
-# class BatchedDataset(SceneDataset):
-#     def __init__(self, dataset: SceneDataset, batch_size):
+# class BatchedDataset(IndexableSceneDataset):
+#     def __init__(self, dataset: IndexableSceneDataset, batch_size):
 #         super().__init__()
 #         self.dataset = dataset
 #         self.batch_size = batch_size
