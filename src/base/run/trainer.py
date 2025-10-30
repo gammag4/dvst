@@ -98,7 +98,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
     
     def state_dict(self):
         state_dict = {
-            'base_model': self.base_model.state_dict(),
             'loss_scheduler': self.loss_scheduler.state_dict(),
             'lr_scheduler': self.lr_scheduler.state_dict(),
             'optimizer': self.optimizer.state_dict(),
@@ -112,7 +111,6 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         return state_dict
     
     def load_state_dict(self, state_dict):
-        self.base_model.load_state_dict(state_dict['base_model'])
         self.loss_scheduler.load_state_dict(state_dict['loss_scheduler'])
         self.lr_scheduler.load_state_dict(state_dict['lr_scheduler'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
@@ -126,31 +124,41 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         config = self.config.train.checkpoints
         
         os.makedirs(config.folder_path, exist_ok=True)
-        checkpoints = os.listdir(config.folder_path)
-        if len(checkpoints) == 0:
+        model_checkpoints = [i for i in os.listdir(config.folder_path) if i.split('.')[0].isdigit()]
+        if len(model_checkpoints) > 0:
+            last_checkpoint = max(model_checkpoints, key=lambda x: int(x.split('.')[0]))
+            checkpoint_path = os.path.join(config.folder_path, last_checkpoint)
+            
+            # Maps to the specific device
+            # This prevents processes from using others' devices (when set to accelerator:local_rank)
+            # TODO I put 'cpu' bc it seems like most people use that, need to check that
+            # TODO weights_only=False only for trusted
+            self.base_model.load_state_dict(torch.load(checkpoint_path, map_location='cpu', weights_only=config.weights_only))
+            self.logger.message(f'Resumed training with model from {checkpoint_path}')
+        
+        train_checkpoint = os.path.join(config.folder_path, 'train_data.pt')
+        if os.path.isfile(train_checkpoint):
+            self.load_state_dict(torch.load(train_checkpoint, map_location='cpu', weights_only=config.weights_only))
+            self.logger.message(f'Resumed training with training data from {train_checkpoint}')
+        else:
             self.load_default_state()
-            return
-        
-        last_checkpoint = max(checkpoints, key=lambda x: int(x.split('.')[0]))
-        checkpoint_path = os.path.join(config.folder_path, last_checkpoint)
-        
-        # Maps to the specific device
-        # This prevents processes from using others' devices (when set to accelerator:local_rank)
-        # TODO I put 'cpu' bc it seems like most people use that, need to check that
-        # TODO weights_only=False only for trusted
-        self.load_state_dict(torch.load(checkpoint_path, map_location='cpu', weights_only=config.weights_only))
-        self.logger.message(f'Resuming training from checkpoint at {checkpoint_path}')
     
     def _try_save_checkpoint(self):
         config = self.config.train.checkpoints
         
-        checkpoint_path = os.path.join(config.folder_path, f'{self.logger.iteration}.pt')
-        
         # Ensures only saves from first GPU to prevent redundancy
         if self.rank == 0 and self.current_global_pass % self.config.train.save_every_passes == 0:
             torch.accelerator.synchronize(self.device)
-            torch.save(self.state_dict(), checkpoint_path)
-            self.logger.message(f'Saving training checkpoint at {checkpoint_path}')
+            
+            checkpoint_path = os.path.join(config.folder_path, f'{self.logger.iteration}.pt')
+            torch.save(self.base_model.state_dict(), checkpoint_path)
+            self.logger.message(f'Saved trained model at {checkpoint_path}')
+            
+            train_checkpoint = os.path.join(config.folder_path, 'train_data.pt')
+            train_checkpoint_temp = os.path.join(config.folder_path, 'train_data_temp.pt')
+            torch.save(self.state_dict(), train_checkpoint_temp)
+            os.replace(train_checkpoint_temp, train_checkpoint)
+            self.logger.message(f'Saved training data at {train_checkpoint}')
     
     def _should_retry_pass(self):
         return self.grad_manager.should_retry_batch
