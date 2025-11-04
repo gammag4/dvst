@@ -126,6 +126,12 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
                 self.scenes_latents[i] = l.detach()
                 self.per_target_losses[i] = comp_loss(lo)
         
+        losses = [i for l in losses for i in l] if isinstance(losses, list) else losses
+        numels = [l.numel() for l in losses]
+        self.logger.log({
+            'per_image_scene_losses': (torch.stack([l.sum() / n for l, n in zip(losses, numels)]) if isinstance(losses, list) else losses.mean(dim=-1)).detach().to('cpu', non_blocking=True),
+            'per_image_loss': ((torch.stack([l.sum() for l in losses]).sum() if isinstance(losses, list) else losses.sum()) / sum(numels)).detach().to('cpu', non_blocking=True),
+        })
         loss = torch.stack([l.sum() for l in losses]).sum() if isinstance(losses, list) else losses.sum()
         
         return loss
