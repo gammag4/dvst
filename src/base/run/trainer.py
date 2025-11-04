@@ -25,6 +25,14 @@ from .timer import Timer
 from .runner import DistributedRunner
 
 
+def find_unused_params(model):
+    print('\nUnused parameters:')
+    
+    for n, p in model.named_parameters():
+        if p.grad is None:
+            print(n)
+
+
 @dataclass
 class TrainerResult:
     score: float
@@ -191,6 +199,8 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         # Scales the loss, and calls backward()
         # to create scaled gradients
         self.grad_manager.scale(loss).backward() # Already called in model
+        
+        # find_unused_params(self.model) # TODO
         
         # All gradients are scaled in this region up to scaler.step(optimizer), so they need to be unscaled to be used
         # Unscales the gradients of optimizer's assigned params in-place
