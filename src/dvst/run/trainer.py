@@ -49,7 +49,6 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
     def load_default_state(self):
         super().load_default_state()
         
-        self.loss_threshold = 0.01 # TODO
         self.frame_window_size = 1
         self.per_target_losses = None
         self.scenes_latents = None
@@ -166,7 +165,8 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         # If it starts with only window size 1, it will only learn to remember first frame
         # With window size 2 it will remember the first one and in the second one it will be forced to learn to not just forget everything from last frames and remember the new frame
         # That will help increasing window size later
-        self.frame_window_size = 2
+        self.loss_threshold = 0.01 # TODO
+        self.frame_window_size = 2 # TODO
         self.per_target_losses = [0.0] * scene_batch_size
         current_frames = [0] * scene_batch_size
         scenes: list[Scene | None] # TODO
@@ -214,7 +214,7 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
                 # Increases frame window size if some batch went all the way with computations and still got loss below some threshold
                 # Meaning it memorized the images all the way back to the beginning
                 if current_frames[i] >= self.frame_window_size and self.per_target_losses[i] < self.loss_threshold:
-                    self.frame_window_size += 1
+                    self.frame_window_size += 1 # TODO
                 
                 if current_frames[i] >= self.frame_window_size or batch[i].is_last:
                     current_frames[i] = 0
