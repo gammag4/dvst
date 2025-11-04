@@ -19,9 +19,8 @@ class DVST(nn.Module):
         
         self.config = config
         
-        self.pose_encoder = PoseEncoder(self.config)
-        self.encoder = DVSTEncoder(self.config, self.pose_encoder)
-        self.decoder = DVSTDecoder(self.config, self.pose_encoder)
+        self.encoder = DVSTEncoder(self.config)
+        self.decoder = DVSTDecoder(self.config)
         
         self.loss = loss # TODO check if eval mode or loss is none in forward
     

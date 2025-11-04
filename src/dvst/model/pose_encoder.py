@@ -70,8 +70,9 @@ def compute_octaves(v: torch.Tensor, n_oct: int | None, dim=-1):
 
 
 class PoseEncoder(nn.Module):
-    def __init__(self, config: DVSTModelConfig):
+    def __init__(self, is_decoder: bool, config: DVSTModelConfig):
         super().__init__()
+        self.is_decoder = is_decoder
         self.config = config
         self.d_model = self.config.d_model
         self.n_oct = self.config.n_oct
@@ -79,13 +80,9 @@ class PoseEncoder(nn.Module):
         self.p = self.config.p
         self.use_plucker = self.config.use_plucker
         
-        # This is the parameters that will represent the default image patch when there is no image to generate embeddings
-        # TODO test two cases, one with parameter (this) and another with two different linear layers one for sources (w/ images) and another for target (w/o images)
-        # (C, p, p)
-        self.im_parameter = nn.Parameter(torch.zeros((self.C, self.p, self.p)))
-        
+        c = 0 if self.is_decoder else self.C
         self.linear = nn.Linear(
-            in_features=((6 + self.C) * self.p ** 2 + 1) if self.n_oct is None else ((12 * self.n_oct + self.C) * self.p ** 2 + 2 * self.n_oct),
+            in_features=((6 + self.C) * self.p ** 2 + 1) if self.n_oct is None else ((12 * self.n_oct + c) * self.p ** 2 + 2 * self.n_oct),
             out_features=self.d_model
         )
     
@@ -116,7 +113,7 @@ class PoseEncoder(nn.Module):
     def create_embeds(self, K: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, I: torch.Tensor | None = None, hw: tuple[int] | torch.Size | None = None):
         # I: (B, C, H, W), K: (3, 3), R: (B, 3, 3), t: (B, 3), time: (B,), hw: (2,)
         
-        assert (I == None) ^ (hw == None), 'Either I or HW or both should be set'
+        assert (I is None and hw is not None) if self.is_decoder else (I is not None and hw is None), 'Wrong inputs used in pose encoder'
         
         if I is not None:
             hw = I.shape[-2:]
@@ -135,8 +132,8 @@ class PoseEncoder(nn.Module):
         
         # Concatenating image with octaves and rearranging into patches
         # (B, HW/p^2, (12 * n_oct + C) * p^2) or (B, HW/p^2, (6 + C) * p^2)
-        if I is None:
-            patches = einx.rearrange('... c1 (h p1) (w p2), c2 p1 p2 -> ... (h w) ((c1 + c2) p1 p2)', plucker_octs, self.im_parameter, p1=self.p, p2=self.p)
+        if self.is_decoder:
+            patches = einx.rearrange('... c (h p1) (w p2) -> ... (h w) (c p1 p2)', plucker_octs, p1=self.p, p2=self.p)
         else:
             patches = einx.rearrange('... c1 (h p1) (w p2), ... c2 (h p1) (w p2) -> ... (h w) ((c1 + c2) p1 p2)', plucker_octs, I, p1=self.p, p2=self.p)
         

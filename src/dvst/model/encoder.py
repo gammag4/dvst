@@ -11,12 +11,12 @@ from .pose_encoder import PoseEncoder
 
 class DVSTEncoder(nn.Module):
     # latent_aggregator(next_frame_embeds, current_latent_embeds) creates next latent embeds from current embeds and next frame
-    def __init__(self, config: DVSTModelConfig, pose_encoder: PoseEncoder):
+    def __init__(self, config: DVSTModelConfig):
         super().__init__()
         
         self.config = config
         
-        self.pose_encoder = pose_encoder
+        self.pose_encoder = PoseEncoder(is_decoder=False, config=self.config)
         self.start_latent_embeds = nn.Parameter(torch.zeros((self.config.n_lat, self.config.d_model)))
         self.latent_aggregator = partial(self.config.latent_aggregator, self)
         self.latent_norm = nn.LayerNorm(self.config.d_model) #TODO check RMSNorm

@@ -9,14 +9,14 @@ from .pose_encoder import PoseEncoder
 
 
 class DVSTDecoder(nn.Module):
-    def __init__(self, config: DVSTModelConfig, pose_encoder: PoseEncoder):
+    def __init__(self, config: DVSTModelConfig):
         super().__init__()
         
         self.config = config
         self.C = self.config.C
         self.p = self.config.p
         
-        self.pose_encoder = pose_encoder
+        self.pose_encoder = PoseEncoder(is_decoder=True, config=self.config)
         self.latent_norm = nn.LayerNorm(self.config.d_model)
         
         self.transformer = Encoder(

@@ -146,7 +146,6 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
                 'model': compute_params_metrics([p.detach() for p in self.base_model.parameters() if p.requires_grad]),
                 'grad': compute_params_metrics([p.grad.detach() for p in self.base_model.parameters() if p.requires_grad and p.grad is not None]),
                 'start_latent_embeds': compute_params_metrics(self.base_model.start_latent_embeds.detach()),
-                'pose_encoder.im_parameter': compute_params_metrics(self.base_model.pose_encoder.im_parameter.detach()),
                 'last_frame.gen': compute_params_metrics(self.last_frames['gen'][0]),
                 'last_frame.target': compute_params_metrics(self.last_frames['target'][0]),
             }
@@ -238,7 +237,7 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         self.current_batch = 0
     
     def _train(self):
-        print(f'Number of features for each encoded patch: {self.base_model.pose_encoder.linear.in_features}')
+        print(f'Number of features for each encoded patch in encoder/decoder: {(self.base_model.encoder.pose_encoder.linear.in_features, self.base_model.decoder.pose_encoder.linear.in_features)}')
         
         return super()._train()
     
