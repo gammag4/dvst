@@ -120,6 +120,7 @@ class TrainConfig(Generic[TDatasetConfig, TOptimizerConfig, TLossConfig]):
     data: DataConfig[TDatasetConfig]
     optimizer: TOptimizerConfig
     loss: TLossConfig
+    batch_size: int
     total_epochs: int
     save_every_passes: int
     log_every_passes: int

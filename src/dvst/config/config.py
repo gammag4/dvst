@@ -11,8 +11,6 @@ from src.base.config import Config
 @dataclass
 class DVSTDatasetConfig:
     path: str
-    scene_batch_size: int
-    should_alternate_long_short_scenes: bool
 
 
 @dataclass

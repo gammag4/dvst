@@ -63,7 +63,7 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
                 path=os.path.join(config.path, 're10k/train'),
                 resize_to=(32, 56), # TODO Check if this resize is respecting aspect ratios of images
                 n_sources=2,
-                n_target_frames=16
+                n_target_frames=8
             )
         ]
         
@@ -71,6 +71,14 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
         return DistIterableSceneDataset(IterableCollectionSceneDataset(datasets), dist.get_rank(), dist.get_world_size())
     
     def create_val_dataset(self, config):
+        # pixel_dataset = PixelSplatRealEstate10KDataset(
+        #     path=os.path.join(config.path, 're10k/train'),
+        #     resize_to=(32, 56), # TODO Check if this resize is respecting aspect ratios of images
+        #     n_sources=2,
+        #     n_target_frames=16
+        # )
+        # pixel_dataset.scenes = pixel_dataset.scenes[torch.randperm(len(pixel_dataset.scenes))][:1000]
+        
         return DistIterableSceneDataset(IterableCollectionSceneDataset([]), dist.get_rank(), dist.get_world_size()) # TODO
     
     def create_test_dataset(self, config):

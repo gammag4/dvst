@@ -69,6 +69,8 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 )
             ),
             train=TrainConfig(
+                # Number of scenes in each batch
+                batch_size=6,
                 # Total number of epochs to run
                 total_epochs=1,
                 # Save after every n passes (forward/backward pass)
@@ -98,13 +100,6 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                     dataset=DVSTDatasetConfig(
                         # Path for datasets
                         path='res/tmp/',
-                        # TODO How many frames to break scenes into (use if using input scenes that are too big)
-                        # When using this, after the specified number of frames, the latent_embedding has its grad graph removed and becomes a leaf tensor
-                        #   Its gradients are not propagated back to the start_latent_embeds parameter, but this saves memory
-                        scene_batch_size=2,
-                        # Whether the training should keep using half the scene_batch_size for long scenes and the other half for short ones
-                        # If enabled, scene_batch_size should be divisible by 2
-                        should_alternate_long_short_scenes = True
                     )
                 ),
                 optimizer=DVSTOptimizerConfig(

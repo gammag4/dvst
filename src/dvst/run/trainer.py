@@ -5,6 +5,7 @@ import torch
 import torch.distributed as dist
 import einx
 from easydict import EasyDict as edict
+from itertools import cycle
 
 from src.base.run import DistributedTrainer, DefaultDistributedTrainer
 
@@ -36,29 +37,22 @@ def compute_params_metrics(params_list):
 class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVSTLossConfig, DVST]):
     @property
     def n_train_steps(self):
-        dataset = cast(SceneDataset, self.train_data.dataset)
-        dataset2 = cast(SceneDataset, self.long_sequence_train_data.dataset)
-        
-        return self.max_epochs * (dataset.n_frames + dataset2.n_frames) // self.config.train.data.dataset.scene_batch_size # TODO
+        return 100000 # TODO
     
     @property
     def n_val_steps(self):
         dataset = cast(SceneDataset, self.val_data.dataset)
         
-        return self.max_epochs * dataset.n_frames // self.config.train.data.dataset.scene_batch_size # TODO
+        return self.max_epochs * dataset.n_frames // self.config.train.batch_size # TODO
     
     def load_default_state(self):
         super().load_default_state()
         
-        self.frame_window_size = 1
-        self.per_target_losses = None
-        self.scenes_latents = None
         self.last_frames = None
     
     def state_dict(self):
         state_dict = super().state_dict()
         
-        state_dict['long_sequence_train_data'] = self.long_sequence_train_data.state_dict()
         state_dict['last_frames'] = self.last_frames
         
         return state_dict
@@ -66,7 +60,6 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
     def load_state_dict(self, state_dict):
         super().load_state_dict(state_dict)
         
-        self.long_sequence_train_data.load_state_dict(state_dict['long_sequence_train_data'])
         self.last_frames = state_dict['last_frames']
     
     def _run_forward(self, *args):
@@ -82,7 +75,8 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         #   and `b = 1` if stack_similar_batches = False
         batch: list[SceneBatch | None]
         scenes_latents: list[torch.Tensor | None]
-        batch, scenes_latents = args
+        batch, = args
+        scenes_latents = [None] * len(batch)
         
         # TODO Whether batches and latents with same sizes should be stacked together to make computations faster
         stack_similar_batches = True
@@ -114,18 +108,6 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
             scenes_latents = self.scenes_latents
         
         losses, scenes_latents, self.last_frames = self.model(list(sources), list(targets), list(scenes_latents))
-        
-        comp_loss = lambda l: l.detach().reshape(l.shape[0], -1).sum(dim=-1) / l.shape[1:].numel() # Gets loss normalized per target frame
-        self.scenes_latents = [None] * len(self.scenes_latents)
-        self.per_target_losses = [0.0] * len(self.per_target_losses)
-        for l, lo, i in zip(scenes_latents, losses, i_list):
-            if stack_similar_batches:
-                for l2, lo2, i2 in zip(l, lo, i):
-                    self.scenes_latents[i2] = l2.unsqueeze(0).detach()
-                    self.per_target_losses[i2] = comp_loss(lo2.unsqueeze(0))
-            else:
-                self.scenes_latents[i] = l.detach()
-                self.per_target_losses[i] = comp_loss(lo)
         
         losses = [i for l in losses for i in l] if isinstance(losses, list) else losses
         numels = [l.numel() for l in losses]
@@ -160,84 +142,32 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
     def _run_epoch(self):
         # Keeps getting scenes from two datasets, one with long scenes (to learn to store longer scenes) and another with short scenes (to give more variability and prevent it from overfitting to the longer scenes)
         
-        data_it = iter(self.train_data)
-        long_data_it = iter(self.long_sequence_train_data)
+        # Keeps iterating over the data
+        data_it = cycle(self.train_data)
         
-        if not self.config.train.data.dataset.should_alternate_long_short_scenes:
-            data_it = long_data_it = (i for k in zip(data_it, long_data_it) for i in k)
+        n_train_steps = 100000 # TODO
+        batch_size = self.config.train.batch_size
         
-        scene_batch_size = self.config.train.data.dataset.scene_batch_size
-        
-        # TODO test hypothesis
-        # If it starts with only window size 1, it will only learn to remember first frame
-        # With window size 2 it will remember the first one and in the second one it will be forced to learn to not just forget everything from last frames and remember the new frame
-        # That will help increasing window size later
-        self.loss_threshold = 0.01 # TODO
-        self.frame_window_size = 2 # TODO
-        self.per_target_losses = [0.0] * scene_batch_size
-        current_frames = [0] * scene_batch_size
-        scenes: list[Scene | None] # TODO
-        self.scenes_latents: list[torch.Tensor | None]
-        scenes, self.scenes_latents = [[None] * scene_batch_size for _ in range(2)]
-        
-        # Each batch is created by getting a single frame from scene_batch_size scenes, where half of the scenes chosen are long ones and the other half are short ones
-        # TODO checkpoint progress (current frame for each scene and current latents)
-        while True:
-            self.logger.log({
-                'batch': self.current_batch,
-                'frame_window_size': self.frame_window_size
-            })
+        for self.current_batch in range(self.current_batch, n_train_steps):
+            scenes: list[Scene | None] = [None] * batch_size
+            batch: list[SceneBatch | None] = [None] * batch_size
             
-            stop = True
+            self.logger.log({ 'batch': self.current_batch })
+            
             for i in range(len(scenes)):
-                is_long = i < len(scenes) // 2
-                
-                if scenes[i] is None:
-                    s = next(long_data_it if is_long else data_it, None)
-                    if s is not None:
-                        scenes[i] = s.load(self.device)
-                if scenes[i] is None:
-                    # Changes iterators so that when one of them has no more scenes, all scenes come from the other
-                    data_it = long_data_it = data_it if is_long else long_data_it
-                else:
-                    stop = False
+                scenes[i] = next(data_it).load(self.device)
+                batch[i] = scenes[i].get_next_frames(num_frames=1, num_targets_back=1)
             
-            if stop:
-                break
+            self.logger.log({'scene_ids': [f'{s.scene_id}' for s in scenes]})
             
-            existing_scenes_ids = [i for i in range(len(scenes)) if scenes[i] is not None]
-            
-            batch: SceneBatch = [None] * scene_batch_size
-            for i in existing_scenes_ids:
-                batch[i] = scenes[i].get_next_frames(num_frames=1, num_targets_back=current_frames[i] + 1)
-            
-            self.logger.log({'scene_ids': [None if s is None else f'{s.scene_id}[{b.start_frame}:{b.end_frame}]' for s, b in zip(scenes, batch)]})
-            
-            self._run_pass(batch, self.scenes_latents)
-            
-            for i in existing_scenes_ids:
-                current_frames[i] += 1
-                
-                # Increases frame window size if some batch went all the way with computations and still got loss below some threshold
-                # Meaning it memorized the images all the way back to the beginning
-                if current_frames[i] >= self.frame_window_size and self.per_target_losses[i] < self.loss_threshold:
-                    self.frame_window_size += 1 # TODO
-                
-                if current_frames[i] >= self.frame_window_size or batch[i].is_last:
-                    current_frames[i] = 0
-                    l = self.scenes_latents[i]
-                    self.scenes_latents[i] = None
-                    del l
-                
-                if batch[i].is_last:
-                    s = scenes[i]
-                    scenes[i] = None
-                    del s
-            
-            self.current_batch += 1
+            self._run_pass(batch)
             
             # TODO
             # Saving up memory for next scene
+            for i in range(len(scenes)):
+                s = scenes[i]
+                scenes[i] = None
+                del s
             gc.collect()
             # torch.accelerator.memory.empty_cache() # Not needed
         
@@ -247,26 +177,3 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         print(f'Number of features for each encoded patch in encoder/decoder: {(self.base_model.encoder.pose_encoder.linear.in_features, self.base_model.decoder.pose_encoder.linear.in_features)}')
         
         return super()._train()
-    
-    async def _run(self):
-        dataset_config = self.config.train.data.dataset
-        
-        if dataset_config.should_alternate_long_short_scenes:
-            assert dataset_config.scene_batch_size % 2 == 0, 'scene_batch_size should be even'
-        
-        # Only downloads once per node
-        if self.rank == 0:
-            await self.dataset_provider.download_dataset(dataset_config)
-        
-        dist.barrier()
-        
-        long_sequence_train_data = self.dataset_provider.create_long_sequence_train_dataset(dataset_config) # TODO
-        self.long_sequence_train_data = self._create_dataloader(long_sequence_train_data)
-        
-        train_data = self.dataset_provider.create_train_dataset(dataset_config)
-        self.train_data = self._create_dataloader(train_data)
-        
-        val_data = self.dataset_provider.create_val_dataset(dataset_config)
-        self.val_data = self._create_dataloader(val_data)
-        
-        return await super(DefaultDistributedTrainer, self)._run()
