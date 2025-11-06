@@ -51,14 +51,11 @@ class DVSTEncoder(nn.Module):
         
         # Computes frame embeddings for all videos and gets each embedding
         pose_embeds, _ = self.pose_encoder(K=K, R=R, t=t, time=time, I=I) # (B, F, n_lat, d_model)
-        pose_embeds = einx.rearrange('b f ... -> f b ...', pose_embeds) # (F, B, ...)
+        pose_embeds = einx.rearrange('b f n d -> b (f n) d', pose_embeds) # (F, B, ...)
         
         # TODO use something like RAG to choose which embeds to use from which frames/views and which order to use them in the context window
         # Passes each frame embedding through the transformer aggregating into latent_embeds
-        for frame_embeds in pose_embeds:
-            latent_embeds = self.latent_aggregator(latent_embeds, frame_embeds)
-            # for i in range(frame_embeds.shape[0]):
-            #     latent_embeds[i] = self.latent_aggregator(latent_embeds[i], frame_embeds[i])
+        latent_embeds = self.latent_aggregator(latent_embeds, pose_embeds)
         
         return latent_embeds
     
