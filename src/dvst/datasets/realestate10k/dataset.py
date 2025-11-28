@@ -10,14 +10,15 @@ from src.dvst.datasets.scene_dataset import StaticScene, SceneData, IterableScen
 
 
 class PixelSplatRE10KSceneData(SceneData):
-    def __init__(self, scene, n_sources, n_target_frames, resize_to):
+    def __init__(self, scene, scene_name, n_sources, n_target_frames, resize_to):
         self.scene = scene
+        self.scene_name = scene_name
         self.n_sources = n_sources
         self.n_target_frames = n_target_frames
         self.resize_to = resize_to
     
     def load(self, device):
-        scene_name = self.scene['key']
+        scene_name = f'{self.scene_name}_{self.scene['key']}'
         # times = self.scene['timestamps'] / 1000000 # From microseconds to seconds
         I = torch.stack([decode_image(i) for i in self.scene['images']]).to(device, non_blocking=True)
         cameras = self.scene['cameras'].to(device, non_blocking=True)
@@ -59,11 +60,11 @@ class PixelSplatRealEstate10KDataset(IterableSceneDataset):
         self.n_sources = n_sources
         self.n_target_frames = n_target_frames
         
+        seed = 42 # TODO
         self.scenes = json_load(os.path.join(self.path, 'data.json')).scenes
         self.batches = [i for i in os.listdir(self.path) if i.endswith('.torch')]
-        random.shuffle(self.batches)
-        self.current_batch = 0
-        self.current_index = 0
+        self.rand = random.Random(seed)
+        self.rand.shuffle(self.batches)
     
     def __len__(self):
         return len(self.scenes)
@@ -71,9 +72,12 @@ class PixelSplatRealEstate10KDataset(IterableSceneDataset):
     def __iter__(self):
         for b in self.batches:
             batch = torch.load(os.path.join(self.path, b))
-            random.shuffle(batch)
-            for s in batch:
-                yield PixelSplatRE10KSceneData(s, self.n_sources, self.n_target_frames, self.resize_to)
+            enum_batch = [(i, s) for i, s in enumerate(batch)]
+            self.rand.shuffle(enum_batch)
+            for i, s in enum_batch:
+                yield PixelSplatRE10KSceneData(s, f'{b.split('.')[0]}_{i}', self.n_sources, self.n_target_frames, self.resize_to)
+            
+            del batch
     
     @property
     def n_frames(self):
