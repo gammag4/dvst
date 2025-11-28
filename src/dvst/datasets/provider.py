@@ -1,5 +1,4 @@
 import os
-import torch.distributed as dist
 
 from src.dvst.datasets.scene_dataset import IterableCollectionSceneDataset, DistIterableSceneDataset
 from src.base.providers import DatasetProvider
@@ -43,7 +42,7 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
             # ),
         ]
         
-        return DistIterableSceneDataset(IterableCollectionSceneDataset(datasets), dist.get_rank(), dist.get_world_size())
+        return DistIterableSceneDataset(IterableCollectionSceneDataset(datasets))
     
     def create_train_dataset(self, config):
         # TODO Add MultiShapeNet dataset https://srt-paper.github.io/#dataset
@@ -68,7 +67,7 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
         ]
         
         # TODO split dataset in a way where each distributed process receives roughly the same amount of batches
-        return DistIterableSceneDataset(IterableCollectionSceneDataset(datasets), dist.get_rank(), dist.get_world_size())
+        return DistIterableSceneDataset(IterableCollectionSceneDataset(datasets))
     
     def create_val_dataset(self, config):
         # pixel_dataset = PixelSplatRealEstate10KDataset(
@@ -79,7 +78,7 @@ class DVSTDatasetProvider(DatasetProvider[DVSTDatasetConfig]):
         # )
         # pixel_dataset.scenes = pixel_dataset.scenes[torch.randperm(len(pixel_dataset.scenes))][:1000]
         
-        return DistIterableSceneDataset(IterableCollectionSceneDataset([]), dist.get_rank(), dist.get_world_size()) # TODO
+        return DistIterableSceneDataset(IterableCollectionSceneDataset([])) # TODO
     
     def create_test_dataset(self, config):
-        return DistIterableSceneDataset(IterableCollectionSceneDataset([]), dist.get_rank(), dist.get_world_size()) # TODO
+        return DistIterableSceneDataset(IterableCollectionSceneDataset([])) # TODO

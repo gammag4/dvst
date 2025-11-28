@@ -3,6 +3,7 @@ import random
 from torch.utils.data import Dataset, IterableDataset, get_worker_info
 from abc import ABC, abstractmethod
 import torch
+import torch.distributed as dist
 from torchcodec.decoders import VideoDecoder
 import torchvision.transforms.v2.functional as v2f
 
@@ -313,11 +314,11 @@ class IterableCollectionSceneDataset(CollectionSceneDataset, IterableDataset[Sce
 
 
 class DistIterableDataset(IterableDataset):
-    def __init__(self, dataset, rank, world_size):
+    def __init__(self, dataset):
         super().__init__()
         self.dataset = dataset
-        self.rank = rank
-        self.world_size = world_size
+        self.rank = dist.get_rank() if dist.is_initialized() else 0
+        self.world_size = dist.get_world_size() if dist.is_initialized() else 1
         self.iterable = isinstance(dataset, IterableDataset)
     
     def __len__(self):
@@ -340,8 +341,8 @@ class DistIterableDataset(IterableDataset):
 
 
 class DistIterableSceneDataset(DistIterableDataset, SceneDataset):
-    def __init__(self, dataset: SceneDataset, rank, world_size):
-        super().__init__(dataset, rank, world_size)
+    def __init__(self, dataset: SceneDataset):
+        super().__init__(dataset)
         self.dataset: SceneDataset
     
     @property
