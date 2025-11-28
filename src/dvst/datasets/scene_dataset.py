@@ -45,12 +45,13 @@ def add_regularization_noise(K, R, t, time, noise_amount):
     return K, R, t, time
 
 
-def process_data(K, R, t, time, hw, resize_to):
+def process_data(K, R, t, time, hw, resize_to, use_regularization_noise=False):
     hw = hw if resize_to is None else resize_to
     K = process_K(K, hw)
     
-    noise_amount = 0.002 # TODO
-    K, R, t, time = add_regularization_noise(K, R, t, time, noise_amount)
+    if use_regularization_noise:
+        noise_amount = 0.002 # TODO
+        K, R, t, time = add_regularization_noise(K, R, t, time, noise_amount)
     
     return K, R, t, time
 
@@ -60,15 +61,16 @@ def add_regularization_noise_I(I, noise_amount):
     return I
 
 
-def process_I(I, resize_to):
+def process_I(I, resize_to, use_regularization_noise=False):
     if resize_to is not None:
         I = v2f.resize(I, resize_to)
 
     if not I.dtype.is_floating_point:
         I = I / 255.0
     
-    noise_amount = 0.002 # TODO
-    I = add_regularization_noise_I(I, noise_amount)
+    if use_regularization_noise:
+        noise_amount = 0.002 # TODO
+        I = add_regularization_noise_I(I, noise_amount)
     
     return I
 
