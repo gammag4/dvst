@@ -82,7 +82,7 @@ class PoseEncoder(nn.Module):
         
         c = 0 if self.is_decoder else self.C
         self.linear = nn.Linear(
-            in_features=((6 + self.C) * self.p ** 2 + 1) if self.n_oct is None else ((12 * self.n_oct + c) * self.p ** 2 + 2 * self.n_oct),
+            in_features=((6 + c) * self.p ** 2 + 1) if self.n_oct is None else ((12 * self.n_oct + c) * self.p ** 2 + 2 * self.n_oct),
             out_features=self.d_model
         )
     
