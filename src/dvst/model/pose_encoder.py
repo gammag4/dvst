@@ -72,6 +72,8 @@ def compute_octaves(v: torch.Tensor, n_oct: int | None, dim=-1):
 class PoseEncoder(nn.Module):
     def __init__(self, is_decoder: bool, config: DVSTModelConfig):
         super().__init__()
+        is_dynamic = False # TODO
+        self.is_dynamic = is_dynamic
         self.is_decoder = is_decoder
         self.config = config
         self.d_model = self.config.d_model
@@ -81,8 +83,9 @@ class PoseEncoder(nn.Module):
         self.use_plucker = self.config.use_plucker
         
         c = 0 if self.is_decoder else self.C
+        t = 1 if is_dynamic else 0
         self.linear = nn.Linear(
-            in_features=((6 + c) * self.p ** 2 + 1) if self.n_oct is None else ((12 * self.n_oct + c) * self.p ** 2 + 2 * self.n_oct),
+            in_features=((6 + c) * self.p ** 2 + t) if self.n_oct is None else ((12 * self.n_oct + c) * self.p ** 2 + 2 * self.n_oct * t),
             out_features=self.d_model
         )
     
@@ -137,10 +140,11 @@ class PoseEncoder(nn.Module):
         else:
             patches = einx.rearrange('... c1 (h p1) (w p2), ... c2 (h p1) (w p2) -> ... (h w) ((c1 + c2) p1 p2)', plucker_octs, I, p1=self.p, p2=self.p)
         
-        time_octs = compute_octaves(time.unsqueeze(-1), self.n_oct, dim=-1) # (B, 2 * n_oct) or (B, 1)
+        if self.is_dynamic:
+            time_octs = compute_octaves(time.unsqueeze(-1), self.n_oct, dim=-1) # (B, 2 * n_oct) or (B, 1)
         
-        # (B, HW/p^2, (12 * n_oct + C) * p^2 + 2 * n_oct) or (B, HW/p^2, (6 + C) * p^2 + 1)
-        embeds = einx.rearrange('... hw c1, ... c2 -> ... hw (c1 + c2)', patches, time_octs)
+            # (B, HW/p^2, (12 * n_oct + C) * p^2 + 2 * n_oct) or (B, HW/p^2, (6 + C) * p^2 + 1)
+            embeds = einx.rearrange('... hw c1, ... c2 -> ... hw (c1 + c2)', patches, time_octs)
         
         return embeds, pad # (B, n_lat, d_model), (4,)
 
