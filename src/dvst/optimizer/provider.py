@@ -21,10 +21,11 @@ class DVSTOptimizerProvider(OptimizerProvider[DVSTOptimizerConfig, DVST]):
         )
         
         if n_scheduler_steps is None:
-            n_scheduler_steps = 0
+            n_scheduler_steps = config.n_warmup_steps
         
-        n_warmup_steps = 5000 # TODO
-        lr_scheduler = ChainedScheduler([LinearLR(optimizer, start_factor=1e-12, end_factor=1, total_iters=n_warmup_steps), CosineAnnealingLR(optimizer, T_max=n_scheduler_steps - n_warmup_steps)], optimizer=optimizer)
+        warmup_scheduler = LinearLR(optimizer, start_factor=1e-12, end_factor=1, total_iters=config.n_warmup_steps)
+        decay_scheduler = CosineAnnealingLR(optimizer, T_max=n_scheduler_steps - config.n_warmup_steps)
+        lr_scheduler = ChainedScheduler([warmup_scheduler, decay_scheduler], optimizer=optimizer)
         # lr_scheduler = ConstantLR(optimizer, factor=1.0, total_iters=n_scheduler_steps)
         
         return (optimizer, lr_scheduler)

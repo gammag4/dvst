@@ -73,6 +73,8 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 batch_size=6,
                 # Total number of epochs to run
                 total_epochs=1,
+                # How many train steps to run in each epoch
+                n_train_steps=200000,
                 # Save after every n passes (forward/backward pass)
                 save_every_passes=100,
                 log_every_passes=20,
@@ -103,6 +105,8 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                     )
                 ),
                 optimizer=DVSTOptimizerConfig(
+                    # Number of warmup steps before going to cosine learning rate
+                    n_warmup_steps=15000,
                     # Learning rate
                     lr=1e-5,
                     # AdamW betas

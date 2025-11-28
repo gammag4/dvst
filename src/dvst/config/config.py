@@ -49,6 +49,7 @@ class DVSTModelConfig:
 
 @dataclass
 class DVSTOptimizerConfig:
+    n_warmup_steps: int
     lr: float
     betas: tuple[float, float]
     weight_decay: float

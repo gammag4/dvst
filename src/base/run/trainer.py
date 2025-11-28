@@ -1,4 +1,5 @@
 import os
+import math
 import datetime
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
@@ -307,11 +308,11 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
 class DefaultDistributedTrainer(DistributedTrainer[TDatasetConfig, TModelConfig, TOptimizerConfig, TLossConfig, TModel]):
     @property
     def n_train_steps(self):
-        return len(self.train_data) * self.max_epochs
+        return self.config.train.n_train_steps * self.max_epochs
     
     @property
     def n_val_steps(self):
-        return len(self.val_data) * self.max_epochs
+        return math.ceil(len(self.val_data) / self.config.train.batch_size)
     
     def _run_forward(self, *args):
         x, y = args

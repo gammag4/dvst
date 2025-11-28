@@ -14,7 +14,7 @@ class Timer:
         if self.total_steps is None:
             return None
         
-        return self.total_steps * self.avg_delta
+        return (self.total_steps - self._n_deltas) * self.avg_delta
     
     def update(self, increment_size=1):
         t = time.perf_counter()

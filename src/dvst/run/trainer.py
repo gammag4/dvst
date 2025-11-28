@@ -145,7 +145,7 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
         # Keeps iterating over the data
         data_it = cycle(self.train_data)
         
-        n_train_steps = 100000 # TODO
+        n_train_steps = self.config.train.n_train_steps
         batch_size = self.config.train.batch_size
         
         for self.current_batch in range(self.current_batch, n_train_steps):
