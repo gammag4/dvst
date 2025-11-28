@@ -71,7 +71,7 @@ class DVSTEncoder(nn.Module):
     def forward(self, batch: SourceBatch | list[SourceBatch], latent_embeds: torch.Tensor | list[torch.Tensor] | None | list[None]) -> torch.Tensor | list[torch.Tensor]:
         if isinstance(batch, list) and isinstance(latent_embeds, list):
             return self._forward_list(batch, latent_embeds)
-        if isinstance(batch, torch.Tensor) and isinstance(latent_embeds, torch.Tensor):
+        if isinstance(batch, SourceBatch) and isinstance(latent_embeds, torch.Tensor | None):
             return self._forward_tensor(batch, latent_embeds)
         
         raise Exception(f'Wrong types for batch and latent_embeds: {(type(batch), type(latent_embeds))}')
