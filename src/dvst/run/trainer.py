@@ -5,7 +5,6 @@ import torch
 import torch.distributed as dist
 import einx
 from easydict import EasyDict as edict
-from itertools import cycle
 
 from src.base.run import DistributedTrainer, DefaultDistributedTrainer
 
@@ -35,16 +34,6 @@ def compute_params_metrics(params_list):
 
 
 class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, DVSTOptimizerConfig, DVSTLossConfig, DVST]):
-    @property
-    def n_train_steps(self):
-        return 100000 # TODO
-    
-    @property
-    def n_val_steps(self):
-        dataset = cast(SceneDataset, self.val_data.dataset)
-        
-        return self.max_epochs * dataset.n_frames // self.config.train.batch_size # TODO
-    
     def load_default_state(self):
         super().load_default_state()
         
@@ -142,8 +131,7 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
     def _run_epoch(self):
         # Keeps getting scenes from two datasets, one with long scenes (to learn to store longer scenes) and another with short scenes (to give more variability and prevent it from overfitting to the longer scenes)
         
-        # Keeps iterating over the data
-        data_it = cycle(self.train_data)
+        data_it = iter(self.train_data)
         
         n_train_steps = self.config.train.n_train_steps
         batch_size = self.config.train.batch_size
@@ -155,7 +143,13 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
             self.logger.log({ 'batch': self.current_batch })
             
             for i in range(len(scenes)):
-                scenes[i] = next(data_it).load(self.device)
+                s = next(data_it, None)
+                if s is None:
+                    # If dataset ends, reiterates over entire dataset
+                    data_it = iter(self.train_data)
+                    s = next(data_it)
+                
+                scenes[i] = s.load(self.device)
                 batch[i] = scenes[i].get_next_frames(num_frames=1, num_targets_back=1)
             
             self.logger.log({'scene_ids': [f'{s.scene_id}' for s in scenes]})
@@ -164,10 +158,8 @@ class DVSTTrainer(DefaultDistributedTrainer[DVSTDatasetConfig, DVSTModelConfig, 
             
             # TODO
             # Saving up memory for next scene
-            for i in range(len(scenes)):
-                s = scenes[i]
-                scenes[i] = None
-                del s
+            del scenes
+            del batch
             gc.collect()
             # torch.accelerator.memory.empty_cache() # Not needed
         
