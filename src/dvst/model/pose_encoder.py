@@ -1,10 +1,16 @@
+import random
 import einx
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.transforms.v2.functional as v2f
 
 
 from src.dvst.config import DVSTModelConfig
+
+
+def clip_val(value, maximum, minimum):
+    return max(minimum, min(maximum, value))
 
 
 def compute_pad(hw: tuple[int] | torch.Size, p: int):
@@ -52,6 +58,7 @@ def compute_plucker_rays(o: torch.Tensor, d: torch.Tensor, use_plucker=True):
     return rays
 
 
+# TODO fix maybe its wrong
 def compute_octaves(v: torch.Tensor, n_oct: int | None, dim=-1):
     assert dim < 0, 'No positive dim allowed'
     
@@ -67,6 +74,9 @@ def compute_octaves(v: torch.Tensor, n_oct: int | None, dim=-1):
         tensors.append(torch.cos(last))
     
     return torch.stack(tensors, dim=dim).flatten(dim - 1, dim)
+
+
+
 
 
 class PoseEncoder(nn.Module):
@@ -113,7 +123,7 @@ class PoseEncoder(nn.Module):
     # We assume images are already padded so that p divides H and W
     # We assume that the K matrix uses xy mapping instead of uv (sensor area is real in range [(0, 0), (h, w)], not [(0, 0), (1, 1)])
     # We assume images are in type float with colors in range 0-1
-    def create_embeds(self, K: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, I: torch.Tensor | None = None, hw: tuple[int] | torch.Size | None = None):
+    def create_patches(self, K: torch.Tensor, R: torch.Tensor, t: torch.Tensor, I: torch.Tensor | None = None, hw: tuple[int] | torch.Size | None = None):
         # I: (B, C, H, W), K: (3, 3), R: (B, 3, 3), t: (B, 3), time: (B,), hw: (2,)
         
         assert (I is None and hw is not None) if self.is_decoder else (I is not None and hw is None), 'Wrong inputs used in pose encoder'
@@ -136,18 +146,25 @@ class PoseEncoder(nn.Module):
         # Concatenating image with octaves and rearranging into patches
         # (B, HW/p^2, (12 * n_oct + C) * p^2) or (B, HW/p^2, (6 + C) * p^2)
         if self.is_decoder:
-            patches = einx.rearrange('... c (h p1) (w p2) -> ... (h w) (c p1 p2)', plucker_octs, p1=self.p, p2=self.p)
+            patches = einx.rearrange('... c (h p1) (w p2) -> ... c h w p1 p2', plucker_octs, p1=self.p, p2=self.p)
         else:
-            patches = einx.rearrange('... c1 (h p1) (w p2), ... c2 (h p1) (w p2) -> ... (h w) ((c1 + c2) p1 p2)', plucker_octs, I, p1=self.p, p2=self.p)
+            patches = einx.rearrange('... c1 (h p1) (w p2), ... c2 (h p1) (w p2) -> ... (c1 + c2) h w p1 p2', plucker_octs, I, p1=self.p, p2=self.p)
+        
+        return patches, pad # (B, (6 + C), H/p, W/p, p, p), (4,)
+    
+    def create_embeds(self, patches: torch.Tensor, time: torch.Tensor):
+        embeds = einx.rearrange('... c h w p1 p2 -> ... (h w) (c p1 p2)', patches)
         
         if self.is_dynamic:
             time_octs = compute_octaves(time.unsqueeze(-1), self.n_oct, dim=-1) # (B, 2 * n_oct) or (B, 1)
         
             # (B, HW/p^2, (12 * n_oct + C) * p^2 + 2 * n_oct) or (B, HW/p^2, (6 + C) * p^2 + 1)
-            embeds = einx.rearrange('... hw c1, ... c2 -> ... hw (c1 + c2)', patches, time_octs)
+            embeds = einx.rearrange('... hw c1, ... c2 -> ... hw (c1 + c2)', embeds, time_octs)
         
-        return embeds, pad # (B, n_lat, d_model), (4,)
-
+        embeds = self.linear(embeds)
+        
+        return embeds # (B, n_lat, d_model)
+    
     # I = images, HW = tuple with height and width
     # Set both if image has been resized, specifying original image height and width in HW
     # We assume images are already resized (always resize them maintaining aspect ratio)
@@ -155,7 +172,44 @@ class PoseEncoder(nn.Module):
     # We assume that the K matrix uses xy mapping instead of uv (sensor area is real in range [(0, 0), (h, w)], not [(0, 0), (1, 1)])
     # We assume images are in type float with colors in range 0-1
     def forward(self, K: torch.Tensor, R: torch.Tensor, t: torch.Tensor, time: torch.Tensor, I: torch.Tensor | None = None, hw: tuple[int] | torch.Size | None = None):
-        embeds, pad = self.create_embeds(K, R, t, time, I, hw)
-        embeds = self.linear(embeds)
+        patches, pad = self.create_patches(K, R, t, I, hw)
+        embeds = self.create_embeds(patches, time)
         
         return embeds, pad # (B, n_lat, d_model), (4,)
+    
+    def a(self, I, num_mipmaps):
+        # im_size_interval = self.p * 2 ** (num_mipmaps - 1)
+        
+        # Randomly choosing new dimensions (does not choose below width / 2 bc these dims will already be in the smaller mipmap levels)
+        width = I.shape[-1]
+        width = clip_val(random.gauss(width * 3 / 4, width / 12), width, width / 2) # Mean between width and width/2 and spread of 3 std to both sides
+        height = I.shape[-2] * width / I.shape[-1]
+        I = v2f.resize(I, (height, width))
+        
+        I, pad = self.pad(I)
+        
+        mips = self.create_mipmaps(I)
+        rays = [self.create_plucker_rays(K, R, t, img, hw) for img in mips]
+        
+        # Randomly chooses new aspect ratios
+        current_asp = height / width
+        max_asp, min_asp = 7 / 3, 3 / 7
+        aspect_ratio = clip_val(random.gauss((max_asp + min_asp) / 2, (max_asp - min_asp) / 6), max_asp, min_asp)
+        
+        if aspect_ratio > current_asp:
+            # Maintains height but reduces width
+            width = height / aspect_ratio
+        else:
+            # Maintains width but reduces height
+            height = width * aspect_ratio
+        
+        after_crop_dims = (height, width)
+    
+    def mipmap_forward(self): 
+        # Chooses dimensions using normal distribution with average 3 * max_dim / 4 and std max_dim / 12 (so that max_dim = avg + 3 std) (clipped if over max_dim) (0.135% will be clipped)
+        # max_dim is original I dimensions
+        I = self.resize(I)
+        # Pads image so that it can be 
+        I, pad = self.pad(I.shape[-2:])
+        mips = self.create_mipmaps()
+        rays = self.create_plucker_rays(K, R, t, I, hw)
