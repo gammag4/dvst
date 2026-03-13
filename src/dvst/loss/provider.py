@@ -13,7 +13,7 @@ class DVSTLossProvider(LossProvider[DVSTLossConfig]):
             return (torch.nn.MSELoss(), None)
         elif config.loss == 'perceptual':
             assert n_scheduler_steps is not None, 'n_scheduler_steps cannot be None for perceptual loss'
-            loss = PerceptualLoss(layer_weights=torch.tensor([1., 1, 0.8, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.2]))
+            loss = PerceptualLoss(layer_weights=torch.tensor([1.6, 1.0, 0.8, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.2]))
             scheduler = PerceptualLossScheduler(loss, n_scheduler_steps, config.scheduler.beta, config.scheduler.regime)
             return (loss, scheduler)
         else:

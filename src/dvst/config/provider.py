@@ -70,14 +70,14 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
             ),
             train=TrainConfig(
                 # Number of scenes in each batch
-                batch_size=6,
+                batch_size=8,
                 # Total number of epochs to run
                 total_epochs=1,
                 # How many train steps to run in each epoch
                 n_train_steps=200000,
                 # Save after every n passes (forward/backward pass)
-                save_every_passes=100,
-                log_every_passes=20,
+                save_every_passes=1000,
+                log_every_passes=10,
                 checkpoints=CheckpointsConfig(
                     # Folder in which to save checkpoints
                     folder_path='res/tmp/checkpoint/',
@@ -108,9 +108,9 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                     # Number of warmup steps before going to cosine learning rate
                     n_warmup_steps=15000,
                     # Learning rate
-                    lr=1e-5,
+                    lr=4e-4,
                     # AdamW betas
-                    betas=(0.99, 0.999),
+                    betas=(0.999, 0.9999),
                     weight_decay=0.01,
                     # TODO Some places report issues so check if this gives errors or nans
                     fused=True
@@ -139,13 +139,13 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 use_plucker=True,
                 
                 # Number of layers in transformer encoder
-                N_enc=8,
+                N_enc=12,
                 # Number of layers in transformer decoder
-                N_dec=16,
+                N_dec=12,
                 # Dimension of all the vector representations used in the transformer models except attention (dim for all vector inputs in transformers, not just the embedding vectors that will be the latent representations of scenes, idk why did i put such a confusing name but yeah)
-                d_model=512,
+                d_model=384,
                 # Dimension of vector representations in the attention space of transformer block (normally chosen to be equal to d_model)
-                d_attn=512,
+                d_attn=384,
                 # Number of attention heads in both encoder and decoder (n_heads should divide d_model)
                 n_heads=12,
                 # Expansion factor for mlp blocks after attention blocks in each transformer block (embeddings will be expanded to e_ff * d_model dimensions then contracted back to d_model dimensions)
@@ -163,7 +163,7 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
                 
                 # Number of embedding vectors used as latent space representation for images
                 # TODO could compute this based on frame size and video size
-                n_lat=1024,
+                n_lat=56, # 2 images
                 # The function that will be used to aggregate latents across frames. Should be one of the functions from src.model.latent_aggregators
                 latent_aggregator=residual_latent_aggregator,
                 
