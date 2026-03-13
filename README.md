@@ -34,6 +34,10 @@ When training with restricted resources, one should increase the values for the 
 This creates an averaging effect similar to what GrokFast does.
 Without this, the model will not converge.
 
+### NN Image
+
+To make it easier to set up the environment, we also built and used a docker image given [here](https://github.com/gammag4/nn-image).
+
 ### DVST
 
 This model was originally an attempt to extend LVSM to dynamic scenes,

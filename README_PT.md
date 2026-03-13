@@ -34,6 +34,10 @@ Quando treinando com recursos restritos, deve-se aumentar bastante os valores do
 Isso cria um efeito de média similar ao que GrokFast faz.
 Sem isso, o modelo não converge.
 
+### NN Image
+
+Para facilitar configurar o ambiente, nós também construímos e usamos uma imagem docker dada [aqui](https://github.com/gammag4/nn-image).
+
 ### DVST
 
 Esse modelo era originalmente uma tentativa de extender o LVSM para cenas dinâmicas,
