@@ -7,6 +7,11 @@ This is my implementation of the [LVSM](https://haian-jin.github.io/projects/LVS
 This is a Novel View Synthesis model, where given a set of images from a 3D scene with their respective camera properties/poses,
 the model aims to generate a new view in the scene, given the camera properties and pose of the target view.
 
+This model has two things in special in comparison to others:
+
+- It is generalizable, meaning while older models needed to be retrained for every new scene, this one can be used in new scenes without being retrained;
+- It minimizes inductive bias by using just a simple vision transformer right after stacking the camera views together with their poses and breaking down into patches. That is why when it is trained with high-resolution images, the results look way better than other models.
+
 ### Training results
 
 Due to the model being heavy and hard to train, we had to reduce it a lot to using the resolution of 32x56.

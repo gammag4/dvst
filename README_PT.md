@@ -7,6 +7,11 @@ Essa é a minha implementação do modelo [LVSM](https://haian-jin.github.io/pro
 Esse é um modelo de Síntese de visão nova, onde dado um conjunto de imagens de uma cena 3D com as respectivas propriedades/poses das câmeras,
 o modelo busca gerar uma visão na nova cena, dadas também as propriedades e pose da câmera da visão-alvo.
 
+Esse modelo tem duas coisas em especial quando comparado com outros:
+
+- Ele é generalizável, o que significa que enqunto modelos mais velhos precisam ser retreinados pra cada cena nova, esse pode ser usado em novas cenas sem precisar ser retreinado;
+- Ele minimiza viés indutivo usando apenas um vision transformer depois de combinar as visões das câmeras com suas respectivas poses e quebrar tudo em patches. Por iso quando ele é treinado com imagens de alta-resolução, os resultados são bem melhores visualmente que outros modelos.
+
 ### Resultados de treino
 
 Por ser um modelo pesado e difícil de treinar, tivemos que o reduzir bastante para usar a resolução de apenas 32x56.
