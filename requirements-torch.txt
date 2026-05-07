@@ -5,6 +5,7 @@ torchaudio
 torchinfo
 torchcodec
 torchdata
+torchmetrics
 xformers
 lightning
 #torch_xla
