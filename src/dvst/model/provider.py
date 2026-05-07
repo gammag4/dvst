@@ -11,8 +11,6 @@ def init_weights(module):
         torch.nn.init.normal_(module.weight, mean=0, std=std)
         if module.bias is not None:
             torch.nn.init.zeros_(module.bias)
-    if isinstance(module, torch.nn.Parameter):
-        torch.nn.init.normal_(module.data, mean=0, std=std)
 
 
 class DVSTModelProvider(ModelProvider[DVSTModelConfig]):
