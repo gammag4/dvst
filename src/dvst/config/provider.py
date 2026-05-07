@@ -71,12 +71,10 @@ class DVSTConfigProvider(ConfigProvider[DVSTDatasetConfig, DVSTModelConfig, DVST
             train=TrainConfig(
                 # Number of scenes in each batch
                 batch_size=8,
-                # Total number of epochs to run
-                total_epochs=1,
                 # How many train steps to run in each epoch
                 n_train_steps=200000,
                 # Save after every n passes (forward/backward pass)
-                save_every_passes=1000,
+                save_every_steps=1000,
                 log_every_passes=10,
                 checkpoints=CheckpointsConfig(
                     # Folder in which to save checkpoints

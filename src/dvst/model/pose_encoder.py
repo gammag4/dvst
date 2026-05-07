@@ -136,15 +136,15 @@ class PoseEncoder(nn.Module):
         # Concatenating image with octaves and rearranging into patches
         # (B, HW/p^2, (12 * n_oct + C) * p^2) or (B, HW/p^2, (6 + C) * p^2)
         if self.is_decoder:
-            patches = einx.rearrange('... c (h p1) (w p2) -> ... (h w) (c p1 p2)', plucker_octs, p1=self.p, p2=self.p)
+            embeds = einx.rearrange('... c (h p1) (w p2) -> ... (h w) (c p1 p2)', plucker_octs, p1=self.p, p2=self.p)
         else:
-            patches = einx.rearrange('... c1 (h p1) (w p2), ... c2 (h p1) (w p2) -> ... (h w) ((c1 + c2) p1 p2)', plucker_octs, I, p1=self.p, p2=self.p)
+            embeds = einx.rearrange('... c1 (h p1) (w p2), ... c2 (h p1) (w p2) -> ... (h w) ((c1 + c2) p1 p2)', plucker_octs, I, p1=self.p, p2=self.p)
         
         if self.is_dynamic:
             time_octs = compute_octaves(time.unsqueeze(-1), self.n_oct, dim=-1) # (B, 2 * n_oct) or (B, 1)
         
             # (B, HW/p^2, (12 * n_oct + C) * p^2 + 2 * n_oct) or (B, HW/p^2, (6 + C) * p^2 + 1)
-            embeds = einx.rearrange('... hw c1, ... c2 -> ... hw (c1 + c2)', patches, time_octs)
+            embeds = einx.rearrange('... hw c1, ... c2 -> ... hw (c1 + c2)', embeds, time_octs)
         
         return embeds, pad # (B, n_lat, d_model), (4,)
 

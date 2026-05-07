@@ -62,7 +62,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         self.amp_config = config.setup.amp
         self.grad_scaler_config = config.setup.grad_manager.scaler
         self.grad_clipping_config = config.train.grad_clipping
-        self.max_epochs = config.train.total_epochs
+        self.max_epochs = 1
     
     @property
     def base_model(self):
@@ -156,7 +156,7 @@ class DistributedTrainer(DistributedRunner[TDatasetConfig, TModelConfig, TOptimi
         config = self.config.train.checkpoints
         
         # Ensures only saves from first GPU to prevent redundancy
-        if self.rank == 0 and self.current_global_pass % self.config.train.save_every_passes == 0:
+        if self.rank == 0 and self.current_global_pass % self.config.train.save_every_steps == 0:
             torch.accelerator.synchronize(self.device)
             
             checkpoint_path = os.path.join(config.folder_path, f'{self.logger.iteration}.pt')
